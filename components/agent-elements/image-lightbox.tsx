@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import Image from "next/image";
 import {
   IconChevronLeft,
   IconChevronRight,
@@ -46,7 +47,10 @@ export function ImageLightbox({
 
   // Sync the active index whenever the consumer re-opens with a new initial.
   useEffect(() => {
-    if (open) setCurrentIndex(initialIndex);
+    if (!open) return;
+    queueMicrotask(() => {
+      setCurrentIndex(initialIndex);
+    });
   }, [open, initialIndex]);
 
   const goToPrevious = useCallback(
@@ -131,10 +135,13 @@ export function ImageLightbox({
         </button>
       )}
 
-      <img
+      <Image
         src={currentImage.url}
         alt={currentImage.filename ?? "Image preview"}
-        className="max-w-[90vw] max-h-[85vh] object-contain select-none"
+        width={4096}
+        height={4096}
+        unoptimized
+        className="max-w-[90vw] max-h-[85vh] w-auto h-auto object-contain select-none"
         onClick={(event) => event.stopPropagation()}
         draggable={false}
       />

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { memo, useState, useCallback, useRef, useEffect } from "react";
 import type { ChatStatus } from "ai";
 import { cn } from "./utils/cn";
@@ -485,9 +486,12 @@ export const InputBar = memo(function InputBar({
             {isTyping && typingAnimation?.image && showImage && (
               <div className="flex gap-2 flex-wrap px-3 pt-3">
                 <div className="relative overflow-hidden shrink-0 w-16 h-16 rounded-md">
-                  <img
+                  <Image
                     src={typingAnimation.image}
                     alt=""
+                    width={64}
+                    height={64}
+                    unoptimized
                     className="w-full h-full object-cover"
                   />
                 </div>

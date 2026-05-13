@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Image from "next/image";
 import {
   IconX as X,
   IconFileText as FileText,
@@ -124,9 +125,12 @@ export function FileAttachment({
           )}
           onClick={canPreview ? openLightbox : undefined}
         >
-          <img
+          <Image
             src={url}
             alt={filename}
+            width={32}
+            height={32}
+            unoptimized
             className="w-full h-full object-cover"
           />
         </div>
@@ -140,9 +144,12 @@ export function FileAttachment({
               )}
               onClick={canPreview ? openLightbox : undefined}
             >
-              <img
+              <Image
                 src={url}
                 alt={filename}
+                width={32}
+                height={32}
+                unoptimized
                 className="w-full h-full object-cover aspect-square"
               />
             </div>

@@ -9,12 +9,17 @@ export function useInputTyping(
   const [visibleChars, setVisibleChars] = useState(0);
   const [showImage, setShowImage] = useState(false);
   const onCompleteRef = useRef(onComplete);
-  onCompleteRef.current = onComplete;
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
   useEffect(() => {
     if (!isActive) {
-      setVisibleChars(0);
-      setShowImage(false);
+      queueMicrotask(() => {
+        setVisibleChars(0);
+        setShowImage(false);
+      });
       return;
     }
 

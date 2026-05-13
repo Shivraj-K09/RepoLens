@@ -82,35 +82,35 @@ export function QuestionPrompt({
   const primaryLabel = isLastQuestion ? submitLabel : nextLabel;
 
   useEffect(() => {
-    if (!initialAnswer || initialAnswer.kind === "skip") {
-      setSelectedIds([]);
-      setCustomText("");
+    queueMicrotask(() => {
+      if (!initialAnswer || initialAnswer.kind === "skip") {
+        setSelectedIds([]);
+        setCustomText("");
+        setTextValue("");
+        return;
+      }
+
+      if (activeQuestion?.kind === "text") {
+        setSelectedIds([]);
+        setCustomText("");
+        setTextValue(initialAnswer.text ?? "");
+        return;
+      }
+
+      const nextSelected = new Set(initialAnswer.selectedIds ?? []);
+      const nextCustomText = initialAnswer.text ?? "";
+      if (customEnabled && nextCustomText.trim().length > 0) {
+        nextSelected.add(QUESTION_CUSTOM_ID);
+      }
+      setSelectedIds(Array.from(nextSelected));
+      setCustomText(nextCustomText);
       setTextValue("");
-      return;
-    }
-
-    if (activeQuestion?.kind === "text") {
-      setSelectedIds([]);
-      setCustomText("");
-      setTextValue(initialAnswer.text ?? "");
-      return;
-    }
-
-    const nextSelected = new Set(initialAnswer.selectedIds ?? []);
-    const nextCustomText = initialAnswer.text ?? "";
-    if (customEnabled && nextCustomText.trim().length > 0) {
-      nextSelected.add(QUESTION_CUSTOM_ID);
-    }
-    setSelectedIds(Array.from(nextSelected));
-    setCustomText(nextCustomText);
-    setTextValue("");
+    });
   }, [
     activeQuestion?.kind,
     clampedIndex,
     customEnabled,
-    initialAnswer?.kind,
-    initialAnswer?.text,
-    initialAnswer?.selectedIds?.join("|"),
+    initialAnswer,
   ]);
 
   const canSubmit = useMemo(() => {
