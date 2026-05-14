@@ -501,12 +501,7 @@ export const InputBar = memo(function InputBar({
 
             {/* Text input or typing animation text */}
             {!isTyping ? (
-              <label
-                htmlFor={textareaId}
-                aria-label={inputAccessibleLabel}
-                className="relative block cursor-text pt-3 pb-0 pr-3 pl-3.5 min-h-[50px]"
-              >
-                <span className="sr-only">{inputAccessibleLabel}</span>
+              <div className="relative block pt-3 pb-0 pr-3 pl-3.5 min-h-[50px]">
                 <textarea
                   ref={textareaRef}
                   id={textareaId}
@@ -515,6 +510,7 @@ export const InputBar = memo(function InputBar({
                   onKeyDown={handleKeyDown}
                   onPaste={onPaste}
                   placeholder={effectivePlaceholder}
+                  aria-label={inputAccessibleLabel}
                   disabled={disabled}
                   rows={1}
                   className={cn(
@@ -524,7 +520,7 @@ export const InputBar = memo(function InputBar({
                   )}
                 />
                 <div className="pointer-events-none absolute inset-0 rounded-an-input-border-radius outline-2 outline-an-input-focus-outline opacity-0 transition-opacity duration-75 peer-focus-visible:opacity-100 peer-focus:opacity-100 z-20 ease-in-out" />
-              </label>
+              </div>
             ) : (
               <div className="cursor-text pt-3 pb-0 pr-3 pl-3.5 min-h-[50px]">
                 <div className="w-full text-[14px] leading-[1.6] text-an-foreground-muted">
