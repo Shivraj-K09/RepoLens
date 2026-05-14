@@ -78,7 +78,7 @@ export function LandingShell({ auth, author, children }: LandingShellProps) {
         <SidebarContent className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <div className="min-h-0 flex-1" />
           {hasAuthor ? (
-            <div className="shrink-0 border-sidebar-border border-t px-3 py-3">
+            <div className="shrink-0 border-sidebar-border border-t p-3">
               <p className="mb-1.5 text-[10px] text-sidebar-foreground/50">
                 Author
               </p>

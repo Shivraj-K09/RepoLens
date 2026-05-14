@@ -46,7 +46,6 @@ export function LandingRepoInput({ className }: LandingRepoInputProps) {
           onStop={onStop}
           placeholder="https://github.com/owner/repository"
           className="px-0 pb-0"
-          autoFocus
         />
       </div>
       {error ? (

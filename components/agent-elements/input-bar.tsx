@@ -1,7 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { memo, useState, useCallback, useRef, useEffect } from "react";
+import {
+  memo,
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useId,
+} from "react";
 import type { ChatStatus } from "ai";
 import { cn } from "./utils/cn";
 
@@ -167,6 +174,7 @@ export const InputBar = memo(function InputBar({
     [isControlled, controlledOnChange],
   );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaId = useId();
   const config = DEFAULT_INPUT_CONFIG;
 
   const isStreaming = status === "streaming" || status === "submitted";
@@ -189,10 +197,9 @@ export const InputBar = memo(function InputBar({
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "0";
-    const nextHeight = Math.min(el.scrollHeight, 120);
-    el.style.height = `${nextHeight}px`;
-    el.style.overflowY = el.scrollHeight > 120 ? "auto" : "hidden";
-    el.style.overflowX = "hidden";
+    const scrollHeight = el.scrollHeight;
+    const nextHeight = Math.min(scrollHeight, 120);
+    el.style.cssText = `height:${nextHeight}px;overflow-y:${scrollHeight > 120 ? "auto" : "hidden"};overflow-x:hidden`;
   }, [input]);
 
   useEffect(() => {
@@ -255,10 +262,10 @@ export const InputBar = memo(function InputBar({
           <button
             type="button"
             onClick={handleInfoBarClose}
-            className="shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-md text-an-foreground-muted/70 hover:text-an-foreground hover:bg-an-background-secondary"
+            className="shrink-0 inline-flex items-center justify-center size-6 rounded-md text-an-foreground-muted/70 hover:text-an-foreground hover:bg-an-background-secondary"
             aria-label="Close"
           >
-            <IconX className="w-3.5 h-3.5" strokeWidth={2} />
+            <IconX className="size-3.5" strokeWidth={2} />
           </button>
         )}
       </div>
@@ -320,7 +327,7 @@ export const InputBar = memo(function InputBar({
       >
         <div className="h-7 border-b border-border px-3 flex items-center justify-between text-xs text-an-tool-color-muted">
           <div className="inline-flex items-center gap-1.5">
-            <IconMessageCircleQuestion className="w-3.5 h-3.5" />
+            <IconMessageCircleQuestion className="size-3.5" />
             Question
           </div>
           {showQuestionNavigation && (
@@ -332,7 +339,7 @@ export const InputBar = memo(function InputBar({
                 className="size-5 inline-flex items-center justify-center rounded-[4px] hover:bg-an-background-secondary disabled:opacity-40"
                 aria-label="Previous question"
               >
-                <IconChevronUp className="w-3.5 h-3.5" />
+                <IconChevronUp className="size-3.5" />
               </button>
               <span>
                 {clampedQuestionIndex} of {totalQuestions}
@@ -344,7 +351,7 @@ export const InputBar = memo(function InputBar({
                 className="size-5 inline-flex items-center justify-center rounded-[4px] hover:bg-an-background-secondary disabled:opacity-40"
                 aria-label="Next question"
               >
-                <IconChevronDown className="w-3.5 h-3.5" />
+                <IconChevronDown className="size-3.5" />
               </button>
             </div>
           )}
@@ -384,15 +391,6 @@ export const InputBar = memo(function InputBar({
     hasContextItems && config.attachmentPreviewStyle !== "hidden";
   const imageDisplayMode =
     config.attachmentPreviewStyle === "thumbnail" ? "image-only" : "chip";
-
-  const handleContainerClick = useCallback((e: React.MouseEvent) => {
-    if (
-      e.target === e.currentTarget ||
-      !(e.target as HTMLElement).closest("button, textarea")
-    ) {
-      textareaRef.current?.focus();
-    }
-  }, []);
 
   const handleSuggestionSelect = useCallback(
     (item: SuggestionItem) => {
@@ -434,10 +432,9 @@ export const InputBar = memo(function InputBar({
           {questionBarNode}
           <div
             className={cn(
-              "relative cursor-text rounded-an-input-border-radius bg-an-input-background shadow-2xs ring-1 ring-foreground/10",
+              "relative rounded-an-input-border-radius bg-an-input-background shadow-2xs ring-1 ring-foreground/10",
               isDragOver && "ring-2 ring-an-primary-color",
             )}
-            onClick={handleContainerClick}
           >
             {/* Context items (attached images/files) */}
             <div
@@ -485,7 +482,7 @@ export const InputBar = memo(function InputBar({
             {/* Typing animation image */}
             {isTyping && typingAnimation?.image && showImage && (
               <div className="flex gap-2 flex-wrap px-3 pt-3">
-                <div className="relative overflow-hidden shrink-0 w-16 h-16 rounded-md">
+                <div className="relative overflow-hidden shrink-0 size-16 rounded-md">
                   <Image
                     src={typingAnimation.image}
                     alt=""
@@ -499,33 +496,37 @@ export const InputBar = memo(function InputBar({
             )}
 
             {/* Text input or typing animation text */}
-            <div className="pt-3 pb-0 pr-3 pl-3.5 min-h-[50px]">
-              {isTyping ? (
+            {!isTyping ? (
+              <label
+                htmlFor={textareaId}
+                className="relative block cursor-text pt-3 pb-0 pr-3 pl-3.5 min-h-[50px]"
+              >
+                <textarea
+                  ref={textareaRef}
+                  id={textareaId}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  onPaste={onPaste}
+                  placeholder={effectivePlaceholder}
+                  disabled={disabled}
+                  rows={1}
+                  className={cn(
+                    "peer w-full resize-none bg-transparent border-0 outline-none text-[14px] leading-[1.6] text-an-foreground placeholder:text-an-input-placeholder-color",
+                    "overflow-hidden",
+                    disabled && "opacity-50 cursor-not-allowed",
+                  )}
+                />
+                <div className="pointer-events-none absolute inset-0 rounded-an-input-border-radius outline-2 outline-an-input-focus-outline opacity-0 transition-opacity duration-75 peer-focus-visible:opacity-100 peer-focus:opacity-100 z-20 ease-in-out" />
+              </label>
+            ) : (
+              <div className="cursor-text pt-3 pb-0 pr-3 pl-3.5 min-h-[50px]">
                 <div className="w-full text-[14px] leading-[1.6] text-an-foreground-muted">
                   <span>{displayedText}</span>
                   <span className="inline-block w-[2px] h-[1em] ml-px align-text-bottom bg-an-foreground animate-an-blink" />
                 </div>
-              ) : (
-                <>
-                  <textarea
-                    ref={textareaRef}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    onPaste={onPaste}
-                    placeholder={effectivePlaceholder}
-                    disabled={disabled}
-                    rows={1}
-                    className={cn(
-                      "peer w-full resize-none bg-transparent border-0 outline-none text-[14px] leading-[1.6] text-an-foreground placeholder:text-an-input-placeholder-color",
-                      "overflow-hidden",
-                      disabled && "opacity-50 cursor-not-allowed",
-                    )}
-                  />
-                  <div className="pointer-events-none absolute inset-0 rounded-an-input-border-radius outline-2 outline-an-input-focus-outline opacity-0 transition-opacity duration-75 peer-focus-visible:opacity-100 peer-focus:opacity-100 z-20 ease-in-out" />
-                </>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Toolbar */}
             <div className="flex items-center justify-between gap-3 px-2 pt-1 pb-2">
@@ -541,7 +542,10 @@ export const InputBar = memo(function InputBar({
                   <AttachmentButton onClick={onAttach} />
                 )}
                 {/* Send / Stop button */}
-                <div
+                <button
+                  type="button"
+                  className="cursor-pointer border-0 bg-transparent p-0 disabled:cursor-default"
+                  disabled={!isStreaming && (!hasInput || disabled)}
                   onClick={() => {
                     if (isStreaming) {
                       onStop();
@@ -549,7 +553,6 @@ export const InputBar = memo(function InputBar({
                       handleSubmit();
                     }
                   }}
-                  className="cursor-pointer"
                 >
                   <SendButton
                     state={
@@ -560,7 +563,7 @@ export const InputBar = memo(function InputBar({
                           : "idle"
                     }
                   />
-                </div>
+                </button>
               </div>
             </div>
           </div>

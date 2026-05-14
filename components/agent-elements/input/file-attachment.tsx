@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type SyntheticEvent } from "react";
 import Image from "next/image";
 import {
   IconX as X,
@@ -70,7 +70,7 @@ function getFileIconName(filename: string, isImage?: boolean): FileIconName {
   return "text";
 }
 
-function renderFileIcon(iconName: FileIconName) {
+function FileIcon({ iconName }: { iconName: FileIconName }) {
   switch (iconName) {
     case "image":
       return <ImageIcon className="size-4 text-muted-foreground" />;
@@ -100,7 +100,7 @@ export function FileAttachment({
   const isImageOnly = display === "image-only" && isImage && !!url;
   const canPreview = Boolean(enableImagePreview && isImage && url);
 
-  const openLightbox = (event: React.MouseEvent) => {
+  const openLightbox = (event: SyntheticEvent) => {
     event.stopPropagation();
     setIsLightboxOpen(true);
   };
@@ -118,44 +118,70 @@ export function FileAttachment({
       onMouseLeave={() => setIsHovered(false)}
     >
       {isImageOnly ? (
-        <div
-          className={cn(
-            "size-8 overflow-hidden shrink-0 rounded-[calc(var(--an-input-border-radius)-var(--an-context-padding)-2px)]",
-            canPreview && "cursor-pointer",
-          )}
-          onClick={canPreview ? openLightbox : undefined}
-        >
-          <Image
-            src={url}
-            alt={filename}
-            width={32}
-            height={32}
-            unoptimized
-            className="w-full h-full object-cover"
-          />
-        </div>
+        canPreview ? (
+          <button
+            type="button"
+            className={cn(
+              "size-8 overflow-hidden shrink-0 rounded-[calc(var(--an-input-border-radius)-var(--an-context-padding)-2px)] border-0 bg-transparent p-0 cursor-pointer text-left",
+            )}
+            onClick={openLightbox}
+          >
+            <Image
+              src={url}
+              alt={filename}
+              width={32}
+              height={32}
+              unoptimized
+              className="w-full h-full object-cover"
+            />
+          </button>
+        ) : (
+          <div className="size-8 overflow-hidden shrink-0 rounded-[calc(var(--an-input-border-radius)-var(--an-context-padding)-2px)]">
+            <Image
+              src={url}
+              alt={filename}
+              width={32}
+              height={32}
+              unoptimized
+              className="w-full h-full object-cover"
+            />
+          </div>
+        )
       ) : (
         <>
           {isImage && url ? (
-            <div
-              className={cn(
-                "w-8 self-stretch overflow-hidden shrink-0 rounded-[calc(var(--an-input-border-radius)-var(--an-context-padding)-2px)]",
-                canPreview && "cursor-pointer",
-              )}
-              onClick={canPreview ? openLightbox : undefined}
-            >
-              <Image
-                src={url}
-                alt={filename}
-                width={32}
-                height={32}
-                unoptimized
-                className="w-full h-full object-cover aspect-square"
-              />
-            </div>
+            canPreview ? (
+              <button
+                type="button"
+                className={cn(
+                  "w-8 self-stretch overflow-hidden shrink-0 rounded-[calc(var(--an-input-border-radius)-var(--an-context-padding)-2px)] border-0 bg-transparent p-0 cursor-pointer text-left",
+                )}
+                onClick={openLightbox}
+              >
+                <Image
+                  src={url}
+                  alt={filename}
+                  width={32}
+                  height={32}
+                  unoptimized
+                  className="w-full h-full object-cover aspect-square"
+                />
+              </button>
+            ) : (
+              <div className="w-8 self-stretch overflow-hidden shrink-0 rounded-[calc(var(--an-input-border-radius)-var(--an-context-padding)-2px)]">
+                <Image
+                  src={url}
+                  alt={filename}
+                  width={32}
+                  height={32}
+                  unoptimized
+                  className="w-full h-full object-cover aspect-square"
+                />
+              </div>
+            )
           ) : (
             <div className="flex items-center justify-center w-8 self-stretch bg-muted shrink-0 rounded-[calc(var(--an-input-border-radius)-var(--an-context-padding)-2px)]">
-              {renderFileIcon(iconName)}
+              <FileIcon iconName={iconName} />
             </div>
           )}
 

@@ -28,6 +28,16 @@ export type QuestionAnswer = {
 
 const QUESTION_CUSTOM_ID = "__custom__";
 
+type AnswerDraft = {
+  selectedIds: string[];
+  customText: string;
+  textValue: string;
+};
+
+function emptyAnswerDraft(): AnswerDraft {
+  return { selectedIds: [], customText: "", textValue: "" };
+}
+
 function optionBadge(idx: number) {
   return String.fromCharCode(65 + idx);
 }
@@ -67,9 +77,8 @@ export function QuestionPrompt({
   onSkip,
   className,
 }: QuestionPromptProps) {
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [customText, setCustomText] = useState("");
-  const [textValue, setTextValue] = useState("");
+  const [draft, setDraft] = useState<AnswerDraft>(() => emptyAnswerDraft());
+  const { selectedIds, customText, textValue } = draft;
   const resolvedTotal = totalQuestions ?? questions.length;
   const clampedIndex = Math.max(1, Math.min(questionIndex, resolvedTotal));
   const activeQuestion = questions[clampedIndex - 1];
@@ -84,16 +93,16 @@ export function QuestionPrompt({
   useEffect(() => {
     queueMicrotask(() => {
       if (!initialAnswer || initialAnswer.kind === "skip") {
-        setSelectedIds([]);
-        setCustomText("");
-        setTextValue("");
+        setDraft(emptyAnswerDraft());
         return;
       }
 
       if (activeQuestion?.kind === "text") {
-        setSelectedIds([]);
-        setCustomText("");
-        setTextValue(initialAnswer.text ?? "");
+        setDraft({
+          selectedIds: [],
+          customText: "",
+          textValue: initialAnswer.text ?? "",
+        });
         return;
       }
 
@@ -102,9 +111,11 @@ export function QuestionPrompt({
       if (customEnabled && nextCustomText.trim().length > 0) {
         nextSelected.add(QUESTION_CUSTOM_ID);
       }
-      setSelectedIds(Array.from(nextSelected));
-      setCustomText(nextCustomText);
-      setTextValue("");
+      setDraft({
+        selectedIds: Array.from(nextSelected),
+        customText: nextCustomText,
+        textValue: "",
+      });
     });
   }, [
     activeQuestion?.kind,
@@ -141,31 +152,39 @@ export function QuestionPrompt({
   ]);
 
   const toggleMulti = (id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
+    setDraft((prev) => ({
+      ...prev,
+      selectedIds: prev.selectedIds.includes(id)
+        ? prev.selectedIds.filter((x) => x !== id)
+        : [...prev.selectedIds, id],
+    }));
   };
 
   const handleSingleSelect = (id: string) => {
-    setSelectedIds([id]);
+    setDraft((prev) => ({ ...prev, selectedIds: [id] }));
   };
 
   const handleCustomTextChange = (nextValue: string) => {
-    setCustomText(nextValue);
-    if (!activeQuestion) return;
-    if (activeQuestion.kind === "single") {
-      setSelectedIds(nextValue.trim().length > 0 ? [QUESTION_CUSTOM_ID] : []);
-      return;
-    }
-    setSelectedIds((prev) => {
-      const hasCustom = prev.includes(QUESTION_CUSTOM_ID);
+    setDraft((prev) => {
+      if (!activeQuestion) return { ...prev, customText: nextValue };
+
+      if (activeQuestion.kind === "single") {
+        return {
+          ...prev,
+          customText: nextValue,
+          selectedIds:
+            nextValue.trim().length > 0 ? [QUESTION_CUSTOM_ID] : [],
+        };
+      }
+
+      const hasCustom = prev.selectedIds.includes(QUESTION_CUSTOM_ID);
+      let nextIds = prev.selectedIds;
       if (nextValue.trim().length > 0 && !hasCustom) {
-        return [...prev, QUESTION_CUSTOM_ID];
+        nextIds = [...prev.selectedIds, QUESTION_CUSTOM_ID];
+      } else if (nextValue.trim().length === 0 && hasCustom) {
+        nextIds = prev.selectedIds.filter((sid) => sid !== QUESTION_CUSTOM_ID);
       }
-      if (nextValue.trim().length === 0 && hasCustom) {
-        return prev.filter((id) => id !== QUESTION_CUSTOM_ID);
-      }
-      return prev;
+      return { ...prev, customText: nextValue, selectedIds: nextIds };
     });
   };
 
@@ -220,7 +239,8 @@ export function QuestionPrompt({
                   onClick={() => {
                     if (activeQuestion.kind === "single") {
                       handleSingleSelect(option.id);
-                      if (customEnabled) setCustomText("");
+                      if (customEnabled)
+                        setDraft((prev) => ({ ...prev, customText: "" }));
                     } else {
                       toggleMulti(option.id);
                     }
@@ -280,7 +300,9 @@ export function QuestionPrompt({
       {activeQuestion.kind === "text" && (
         <textarea
           value={textValue}
-          onChange={(event) => setTextValue(event.target.value)}
+          onChange={(event) =>
+            setDraft((prev) => ({ ...prev, textValue: event.target.value }))
+          }
           placeholder={activeQuestion.placeholder ?? "Type your answer"}
           rows={3}
           className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-an-tool-color resize-y"
