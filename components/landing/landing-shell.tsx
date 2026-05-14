@@ -155,11 +155,7 @@ export function LandingShell({ auth, author, children }: LandingShellProps) {
             <span className="text-muted-foreground">Lens</span>
           </span>
         </header>
-        <div className="flex flex-1 flex-col justify-center px-5 py-10 md:px-8 md:py-14">
-          <div className="-translate-y-5 mx-auto flex w-full max-w-3xl flex-col items-center gap-3 md:-translate-y-8 md:gap-4">
-            {children}
-          </div>
-        </div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );

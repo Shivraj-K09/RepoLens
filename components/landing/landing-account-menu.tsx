@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import type { LandingAuthSnapshot } from "@/lib/auth/landing-auth";
 import { cn } from "@/lib/utils";
 import { LogOut } from "lucide-react";
-import { useCallback } from "react";
 
 function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -27,10 +26,6 @@ export function LandingAccountMenu({
   auth,
   className,
 }: LandingAccountMenuProps) {
-  const onSignOut = useCallback(() => {
-    window.location.assign("/api/auth/signout");
-  }, []);
-
   return (
     <div
       className={cn(
@@ -55,16 +50,17 @@ export function LandingAccountMenu({
           {auth.displayName}
         </span>
       </div>
-      <Button
-        type="button"
-        variant="destructive"
-        size="icon-sm"
-        aria-label="Sign out"
-        className="shrink-0"
-        onClick={onSignOut}
-      >
-        <LogOut aria-hidden />
-      </Button>
+      <form action="/api/auth/signout" method="post" className="contents">
+        <Button
+          type="submit"
+          variant="destructive"
+          size="icon-sm"
+          aria-label="Sign out"
+          className="shrink-0"
+        >
+          <LogOut aria-hidden />
+        </Button>
+      </form>
     </div>
   );
 }

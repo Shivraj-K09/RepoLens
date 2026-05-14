@@ -8,7 +8,25 @@ import { createClient } from "@/lib/supabase/server";
  * Starts GitHub OAuth via Supabase Auth. No UI — open this URL in a browser while logged out.
  */
 export async function GET(request: Request) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return NextResponse.json(
+      { error: "Authentication is not configured." },
+      { status: 503 },
+    );
+  }
+
   const siteUrl = getSiteUrl(request);
+  let requestUrl: URL;
+  try {
+    requestUrl = new URL(request.url);
+  } catch {
+    return NextResponse.json({ error: "Bad request" }, { status: 400 });
+  }
+
+  const nextPath = safeNextPath(requestUrl.searchParams.get("next"));
+
   const supabase = await createClient();
 
   const {
@@ -16,8 +34,6 @@ export async function GET(request: Request) {
   } = await supabase.auth.getUser();
 
   if (user) {
-    const url = new URL(request.url);
-    const nextPath = safeNextPath(url.searchParams.get("next"));
     return NextResponse.redirect(new URL(nextPath, siteUrl));
   }
 
@@ -32,7 +48,7 @@ export async function GET(request: Request) {
   if (error || !data.url) {
     return NextResponse.json(
       { error: error?.message ?? "Failed to start OAuth" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
