@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { safeNextPath } from "@/lib/auth/safe-next-path";
 import { getSiteUrl } from "@/lib/auth/site-url";
 import { createClient } from "@/lib/supabase/server";
 
@@ -9,6 +10,16 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: Request) {
   const siteUrl = getSiteUrl(request);
   const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user) {
+    const url = new URL(request.url);
+    const nextPath = safeNextPath(url.searchParams.get("next"));
+    return NextResponse.redirect(new URL(nextPath, siteUrl));
+  }
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "github",
