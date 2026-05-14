@@ -188,6 +188,10 @@ export const InputBar = memo(function InputBar({
   );
 
   const effectivePlaceholder = placeholder ?? config.inputBarPlaceholder;
+  const inputAccessibleLabel =
+    effectivePlaceholder.trim().length > 0
+      ? effectivePlaceholder
+      : config.inputBarPlaceholder;
 
   const showAttach = Boolean(onAttach);
   const attachRight = config.attachmentButtonPosition === "right";
@@ -499,9 +503,10 @@ export const InputBar = memo(function InputBar({
             {!isTyping ? (
               <label
                 htmlFor={textareaId}
-                aria-label={effectivePlaceholder}
+                aria-label={inputAccessibleLabel}
                 className="relative block cursor-text pt-3 pb-0 pr-3 pl-3.5 min-h-[50px]"
               >
+                <span className="sr-only">{inputAccessibleLabel}</span>
                 <textarea
                   ref={textareaRef}
                   id={textareaId}

@@ -3,7 +3,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/providers/theme-provider";
 import { Analytics } from "@vercel/analytics/next";
-import { ReducedMotionPreference } from "@/components/reduced-motion-preference";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const geistSans = Geist({
@@ -39,7 +38,6 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <ReducedMotionPreference />
           <TooltipProvider>{children}</TooltipProvider>
           <Analytics />
         </ThemeProvider>

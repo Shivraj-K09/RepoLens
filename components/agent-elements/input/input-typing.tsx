@@ -1,10 +1,5 @@
 import { useEffect, useReducer, useRef } from "react";
 
-import {
-  scheduleInputTypingAnimations,
-  type TypingScheduleAction,
-} from "./input-typing-schedule";
-
 type TypingState = {
   visibleChars: number;
   showImage: boolean;
@@ -15,7 +10,9 @@ const initialTypingState: TypingState = {
   showImage: false,
 };
 
-type TypingAction = { type: "reset" } | TypingScheduleAction;
+type TypingAction =
+  | { type: "reset" }
+  | { type: "patch"; patch: Partial<TypingState> };
 
 function typingReducer(state: TypingState, action: TypingAction): TypingState {
   switch (action.type) {
@@ -44,10 +41,48 @@ export function useInputTyping(
       dispatch({ type: "reset" });
       return;
     }
-    return scheduleInputTypingAnimations(dispatch, onCompleteRef, {
-      text,
-      duration,
-    });
+
+    const imageDelay = duration * 0.1;
+    const typingStart = duration * 0.15;
+    const typingDuration = duration * 0.7;
+    const charInterval =
+      text.length > 0 ? typingDuration / text.length : typingDuration;
+    const sendDelay = duration * 0.15;
+    const totalEnd = typingStart + typingDuration + sendDelay;
+
+    let rafId = 0;
+    let cancelled = false;
+    const t0 = performance.now();
+
+    const tick = (now: number) => {
+      if (cancelled) return;
+
+      const elapsed = now - t0;
+      const showImage = elapsed >= imageDelay;
+
+      let visibleChars = 0;
+      if (elapsed >= typingStart && text.length > 0) {
+        visibleChars = Math.min(
+          text.length,
+          Math.floor((elapsed - typingStart) / charInterval) + 1,
+        );
+      }
+
+      dispatch({ type: "patch", patch: { showImage, visibleChars } });
+
+      if (elapsed >= totalEnd) {
+        onCompleteRef.current();
+        return;
+      }
+
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+    };
   }, [isActive, text, duration]);
 
   return {

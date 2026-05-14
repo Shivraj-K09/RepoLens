@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useReducer } from "react";
 import { cn } from "../utils/cn";
 
 export type QuestionOption = {
@@ -36,6 +36,49 @@ type AnswerDraft = {
 
 function emptyAnswerDraft(): AnswerDraft {
   return { selectedIds: [], customText: "", textValue: "" };
+}
+
+function computeSyncedAnswerDraft(
+  initialAnswer: QuestionAnswer | undefined,
+  activeQuestion: QuestionConfig | undefined,
+  customEnabled: boolean,
+): AnswerDraft {
+  if (!initialAnswer || initialAnswer.kind === "skip") {
+    return emptyAnswerDraft();
+  }
+  if (activeQuestion?.kind === "text") {
+    return {
+      selectedIds: [],
+      customText: "",
+      textValue: initialAnswer.text ?? "",
+    };
+  }
+  const nextSelected = new Set(initialAnswer.selectedIds ?? []);
+  const nextCustomText = initialAnswer.text ?? "";
+  if (customEnabled && nextCustomText.trim().length > 0) {
+    nextSelected.add(QUESTION_CUSTOM_ID);
+  }
+  return {
+    selectedIds: Array.from(nextSelected),
+    customText: nextCustomText,
+    textValue: "",
+  };
+}
+
+type AnswerDraftAction =
+  | { type: "replace"; next: AnswerDraft }
+  | { type: "update"; fn: (prev: AnswerDraft) => AnswerDraft };
+
+function answerDraftReducer(
+  prev: AnswerDraft,
+  action: AnswerDraftAction,
+): AnswerDraft {
+  switch (action.type) {
+    case "replace":
+      return action.next;
+    case "update":
+      return action.fn(prev);
+  }
 }
 
 function optionBadge(idx: number) {
@@ -77,7 +120,10 @@ export function QuestionPrompt({
   onSkip,
   className,
 }: QuestionPromptProps) {
-  const [draft, setDraft] = useState<AnswerDraft>(() => emptyAnswerDraft());
+  const [draft, dispatchDraft] = useReducer(
+    answerDraftReducer,
+    emptyAnswerDraft(),
+  );
   const { selectedIds, customText, textValue } = draft;
   const resolvedTotal = totalQuestions ?? questions.length;
   const clampedIndex = Math.max(1, Math.min(questionIndex, resolvedTotal));
@@ -91,37 +137,15 @@ export function QuestionPrompt({
   const primaryLabel = isLastQuestion ? submitLabel : nextLabel;
 
   useEffect(() => {
-    queueMicrotask(() => {
-      const nextDraft = ((): AnswerDraft => {
-        if (!initialAnswer || initialAnswer.kind === "skip") {
-          return emptyAnswerDraft();
-        }
-        if (activeQuestion?.kind === "text") {
-          return {
-            selectedIds: [],
-            customText: "",
-            textValue: initialAnswer.text ?? "",
-          };
-        }
-        const nextSelected = new Set(initialAnswer.selectedIds ?? []);
-        const nextCustomText = initialAnswer.text ?? "";
-        if (customEnabled && nextCustomText.trim().length > 0) {
-          nextSelected.add(QUESTION_CUSTOM_ID);
-        }
-        return {
-          selectedIds: Array.from(nextSelected),
-          customText: nextCustomText,
-          textValue: "",
-        };
-      })();
-      setDraft(nextDraft);
+    dispatchDraft({
+      type: "replace",
+      next: computeSyncedAnswerDraft(
+        initialAnswer,
+        activeQuestion,
+        customEnabled,
+      ),
     });
-  }, [
-    activeQuestion?.kind,
-    clampedIndex,
-    customEnabled,
-    initialAnswer,
-  ]);
+  }, [activeQuestion, clampedIndex, customEnabled, initialAnswer]);
 
   const canSubmit = useMemo(() => {
     if (activeQuestion?.kind === "text") return textValue.trim().length > 0;
@@ -151,39 +175,50 @@ export function QuestionPrompt({
   ]);
 
   const toggleMulti = (id: string) => {
-    setDraft((prev) => ({
-      ...prev,
-      selectedIds: prev.selectedIds.includes(id)
-        ? prev.selectedIds.filter((x) => x !== id)
-        : [...prev.selectedIds, id],
-    }));
+    dispatchDraft({
+      type: "update",
+      fn: (prev) => ({
+        ...prev,
+        selectedIds: prev.selectedIds.includes(id)
+          ? prev.selectedIds.filter((x) => x !== id)
+          : [...prev.selectedIds, id],
+      }),
+    });
   };
 
   const handleSingleSelect = (id: string) => {
-    setDraft((prev) => ({ ...prev, selectedIds: [id] }));
+    dispatchDraft({
+      type: "update",
+      fn: (prev) => ({ ...prev, selectedIds: [id] }),
+    });
   };
 
   const handleCustomTextChange = (nextValue: string) => {
-    setDraft((prev) => {
-      if (!activeQuestion) return { ...prev, customText: nextValue };
+    dispatchDraft({
+      type: "update",
+      fn: (prev) => {
+        if (!activeQuestion) return { ...prev, customText: nextValue };
 
-      if (activeQuestion.kind === "single") {
-        return {
-          ...prev,
-          customText: nextValue,
-          selectedIds:
-            nextValue.trim().length > 0 ? [QUESTION_CUSTOM_ID] : [],
-        };
-      }
+        if (activeQuestion.kind === "single") {
+          return {
+            ...prev,
+            customText: nextValue,
+            selectedIds:
+              nextValue.trim().length > 0 ? [QUESTION_CUSTOM_ID] : [],
+          };
+        }
 
-      const hasCustom = prev.selectedIds.includes(QUESTION_CUSTOM_ID);
-      let nextIds = prev.selectedIds;
-      if (nextValue.trim().length > 0 && !hasCustom) {
-        nextIds = [...prev.selectedIds, QUESTION_CUSTOM_ID];
-      } else if (nextValue.trim().length === 0 && hasCustom) {
-        nextIds = prev.selectedIds.filter((sid) => sid !== QUESTION_CUSTOM_ID);
-      }
-      return { ...prev, customText: nextValue, selectedIds: nextIds };
+        const hasCustom = prev.selectedIds.includes(QUESTION_CUSTOM_ID);
+        let nextIds = prev.selectedIds;
+        if (nextValue.trim().length > 0 && !hasCustom) {
+          nextIds = [...prev.selectedIds, QUESTION_CUSTOM_ID];
+        } else if (nextValue.trim().length === 0 && hasCustom) {
+          nextIds = prev.selectedIds.filter(
+            (sid) => sid !== QUESTION_CUSTOM_ID,
+          );
+        }
+        return { ...prev, customText: nextValue, selectedIds: nextIds };
+      },
     });
   };
 
@@ -239,7 +274,10 @@ export function QuestionPrompt({
                     if (activeQuestion.kind === "single") {
                       handleSingleSelect(option.id);
                       if (customEnabled)
-                        setDraft((prev) => ({ ...prev, customText: "" }));
+                        dispatchDraft({
+                          type: "update",
+                          fn: (prev) => ({ ...prev, customText: "" }),
+                        });
                     } else {
                       toggleMulti(option.id);
                     }
@@ -300,7 +338,13 @@ export function QuestionPrompt({
         <textarea
           value={textValue}
           onChange={(event) =>
-            setDraft((prev) => ({ ...prev, textValue: event.target.value }))
+            dispatchDraft({
+              type: "update",
+              fn: (prev) => ({
+                ...prev,
+                textValue: event.target.value,
+              }),
+            })
           }
           placeholder={activeQuestion.placeholder ?? "Type your answer"}
           rows={3}
