@@ -92,30 +92,29 @@ export function QuestionPrompt({
 
   useEffect(() => {
     queueMicrotask(() => {
-      if (!initialAnswer || initialAnswer.kind === "skip") {
-        setDraft(emptyAnswerDraft());
-        return;
-      }
-
-      if (activeQuestion?.kind === "text") {
-        setDraft({
-          selectedIds: [],
-          customText: "",
-          textValue: initialAnswer.text ?? "",
-        });
-        return;
-      }
-
-      const nextSelected = new Set(initialAnswer.selectedIds ?? []);
-      const nextCustomText = initialAnswer.text ?? "";
-      if (customEnabled && nextCustomText.trim().length > 0) {
-        nextSelected.add(QUESTION_CUSTOM_ID);
-      }
-      setDraft({
-        selectedIds: Array.from(nextSelected),
-        customText: nextCustomText,
-        textValue: "",
-      });
+      const nextDraft = ((): AnswerDraft => {
+        if (!initialAnswer || initialAnswer.kind === "skip") {
+          return emptyAnswerDraft();
+        }
+        if (activeQuestion?.kind === "text") {
+          return {
+            selectedIds: [],
+            customText: "",
+            textValue: initialAnswer.text ?? "",
+          };
+        }
+        const nextSelected = new Set(initialAnswer.selectedIds ?? []);
+        const nextCustomText = initialAnswer.text ?? "";
+        if (customEnabled && nextCustomText.trim().length > 0) {
+          nextSelected.add(QUESTION_CUSTOM_ID);
+        }
+        return {
+          selectedIds: Array.from(nextSelected),
+          customText: nextCustomText,
+          textValue: "",
+        };
+      })();
+      setDraft(nextDraft);
     });
   }, [
     activeQuestion?.kind,

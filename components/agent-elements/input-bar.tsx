@@ -499,6 +499,7 @@ export const InputBar = memo(function InputBar({
             {!isTyping ? (
               <label
                 htmlFor={textareaId}
+                aria-label={effectivePlaceholder}
                 className="relative block cursor-text pt-3 pb-0 pr-3 pl-3.5 min-h-[50px]"
               >
                 <textarea

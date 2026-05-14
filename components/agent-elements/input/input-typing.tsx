@@ -1,5 +1,10 @@
 import { useEffect, useReducer, useRef } from "react";
 
+import {
+  scheduleInputTypingAnimations,
+  type TypingScheduleAction,
+} from "./input-typing-schedule";
+
 type TypingState = {
   visibleChars: number;
   showImage: boolean;
@@ -10,9 +15,7 @@ const initialTypingState: TypingState = {
   showImage: false,
 };
 
-type TypingAction =
-  | { type: "reset" }
-  | { type: "patch"; patch: Partial<TypingState> };
+type TypingAction = { type: "reset" } | TypingScheduleAction;
 
 function typingReducer(state: TypingState, action: TypingAction): TypingState {
   switch (action.type) {
@@ -38,39 +41,13 @@ export function useInputTyping(
 
   useEffect(() => {
     if (!isActive) {
-      queueMicrotask(() => dispatch({ type: "reset" }));
+      dispatch({ type: "reset" });
       return;
     }
-
-    const imageDelay = duration * 0.1;
-    const typingStart = duration * 0.15;
-    const typingDuration = duration * 0.7;
-    const charInterval =
-      text.length > 0 ? typingDuration / text.length : typingDuration;
-    const sendDelay = duration * 0.15;
-    const timers: ReturnType<typeof setTimeout>[] = [];
-
-    timers.push(
-      setTimeout(() => dispatch({ type: "patch", patch: { showImage: true } }), imageDelay),
-    );
-    for (let i = 0; i < text.length; i++) {
-      timers.push(
-        setTimeout(
-          () => dispatch({ type: "patch", patch: { visibleChars: i + 1 } }),
-          typingStart + charInterval * i,
-        ),
-      );
-    }
-    timers.push(
-      setTimeout(
-        () => onCompleteRef.current(),
-        typingStart + typingDuration + sendDelay,
-      ),
-    );
-
-    return () => {
-      for (const id of timers) clearTimeout(id);
-    };
+    return scheduleInputTypingAnimations(dispatch, onCompleteRef, {
+      text,
+      duration,
+    });
   }, [isActive, text, duration]);
 
   return {
