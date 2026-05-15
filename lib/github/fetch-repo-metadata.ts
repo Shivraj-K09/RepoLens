@@ -1,5 +1,12 @@
 import { createOctokit } from "@/lib/github/octokit";
 
+const METADATA_CACHE_TTL_MS = 3 * 60 * 1000;
+const metadataCache = new Map<
+  string,
+  { value: GithubRepoMetadataDbPatch | null; expiresAt: number }
+>();
+const metadataInflight = new Map<string, Promise<GithubRepoMetadataDbPatch | null>>();
+
 /** Columns on `public.repositories` we hydrate from GitHub’s REST API (`repos.get` + branch ref). */
 export type GithubRepoMetadataDbPatch = {
   github_owner: string;
@@ -30,6 +37,16 @@ export async function fetchGithubRepoMetadataPatch(
   owner: string,
   repo: string,
 ): Promise<GithubRepoMetadataDbPatch | null> {
+  const key = `${owner.toLowerCase()}/${repo.toLowerCase()}`;
+  const now = Date.now();
+  const cached = metadataCache.get(key);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+  const inflight = metadataInflight.get(key);
+  if (inflight) return inflight;
+
+  const task = (async () => {
   const octokit = createOctokit();
 
   try {
@@ -81,5 +98,18 @@ export async function fetchGithubRepoMetadataPatch(
     }
     console.warn("[fetchGithubRepoMetadataPatch] repos.get failed:", err);
     return null;
+  }
+  })();
+
+  metadataInflight.set(key, task);
+  try {
+    const value = await task;
+    metadataCache.set(key, {
+      value,
+      expiresAt: Date.now() + METADATA_CACHE_TTL_MS,
+    });
+    return value;
+  } finally {
+    metadataInflight.delete(key);
   }
 }

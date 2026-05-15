@@ -101,7 +101,7 @@ function formatMcpArgs(input: Record<string, unknown> | undefined): string {
   );
   if (entries.length === 0) return "";
 
-  const sorted = [...entries].sort(([a], [b]) => {
+  const sorted = [...entries].toSorted(([a], [b]) => {
     const ai = PRIORITY_ARGS.indexOf(a);
     const bi = PRIORITY_ARGS.indexOf(b);
     if (ai !== -1 && bi !== -1) return ai - bi;

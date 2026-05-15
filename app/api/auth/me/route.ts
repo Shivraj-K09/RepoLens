@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { sanitizeErrorMessage } from "@/lib/security/sanitize-error-message";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -13,7 +14,10 @@ export async function GET() {
   } = await supabase.auth.getUser();
 
   if (error) {
-    return NextResponse.json({ user: null, error: error.message }, { status: 401 });
+    return NextResponse.json(
+      { user: null, error: sanitizeErrorMessage(error.message) },
+      { status: 401 },
+    );
   }
 
   return NextResponse.json({ user }, { status: user ? 200 : 401 });

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { sanitizeErrorMessage } from "@/lib/security/sanitize-error-message";
 import { createClient } from "@/lib/supabase/server";
 import { requireSavedRepoAccess } from "@/lib/supabase/require-repo-for-user";
 
@@ -45,10 +46,13 @@ export async function GET(_request: Request, { params }: RouteParams) {
     .order("updated_at", { ascending: false })
     .limit(60);
   if (chatsError) {
-    return NextResponse.json({ error: chatsError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: sanitizeErrorMessage(chatsError.message) },
+      { status: 500 },
+    );
   }
 
-  const chatIds = (chats ?? []).map((c) => c.id).filter(Boolean);
+  const chatIds = (chats ?? []).flatMap((c) => (c.id ? [c.id] : []));
   if (chatIds.length === 0) {
     return NextResponse.json({ chats: [] });
   }
@@ -59,29 +63,56 @@ export async function GET(_request: Request, { params }: RouteParams) {
     .in("chat_id", chatIds)
     .order("created_at", { ascending: false });
   if (messagesError) {
-    return NextResponse.json({ error: messagesError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: sanitizeErrorMessage(messagesError.message) },
+      { status: 500 },
+    );
   }
 
-  const latestByChat = new Map<
-    string,
-    { role: string; content: string; created_at: string }
-  >();
-  const countByChat = new Map<string, number>();
-  for (const message of messages ?? []) {
-    const chatId = message.chat_id as string;
-    if (!chatId) continue;
-    countByChat.set(chatId, (countByChat.get(chatId) ?? 0) + 1);
-    if (!latestByChat.has(chatId)) {
-      latestByChat.set(chatId, {
-        role: String(message.role ?? ""),
-        content: String(message.content ?? ""),
-        created_at: String(message.created_at ?? ""),
-      });
-    }
-  }
+  type LatestMsg = {
+    role: string;
+    content: string;
+    created_at: string;
+  };
+  const { latestByChat, countByChat } = (messages ?? []).reduce(
+    (
+      acc: {
+        latestByChat: Record<string, LatestMsg>;
+        countByChat: Record<string, number>;
+      },
+      message,
+    ) => {
+      const chatId = message.chat_id as string;
+      if (!chatId) return acc;
+      const prevCount = acc.countByChat[chatId] ?? 0;
+      const nextCountByChat = { ...acc.countByChat, [chatId]: prevCount + 1 };
+      const latestByChat =
+        chatId in acc.latestByChat
+          ? acc.latestByChat
+          : {
+              ...acc.latestByChat,
+              [chatId]: {
+                role: String(message.role ?? ""),
+                content: String(message.content ?? ""),
+                created_at: String(message.created_at ?? ""),
+              },
+            };
+      return {
+        countByChat: nextCountByChat,
+        latestByChat,
+      };
+    },
+    {
+      latestByChat: {},
+      countByChat: {},
+    } as {
+      latestByChat: Record<string, LatestMsg>;
+      countByChat: Record<string, number>;
+    },
+  );
 
   const payload = (chats ?? []).map((chat) => {
-    const latest = latestByChat.get(chat.id);
+    const latest = latestByChat[chat.id];
     return {
       id: chat.id,
       title:
@@ -90,7 +121,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
           : fallbackTitleFromRepo(repoRow.github_owner, repoRow.github_repo),
       created_at: chat.created_at,
       updated_at: chat.updated_at,
-      message_count: countByChat.get(chat.id) ?? 0,
+      message_count: countByChat[chat.id] ?? 0,
       latest_message: latest ?? null,
     };
   });
@@ -148,7 +179,10 @@ export async function POST(request: Request, { params }: RouteParams) {
     .select("id, title, created_at, updated_at")
     .single();
   if (error || !data) {
-    return NextResponse.json({ error: error?.message ?? "Insert failed" }, { status: 500 });
+    return NextResponse.json(
+      { error: sanitizeErrorMessage(error?.message ?? "Insert failed") },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ chat: data }, { status: 201 });

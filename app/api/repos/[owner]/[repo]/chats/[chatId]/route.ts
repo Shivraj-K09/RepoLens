@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { sanitizeErrorMessage } from "@/lib/security/sanitize-error-message";
 import { createClient } from "@/lib/supabase/server";
 import { requireSavedRepoAccess } from "@/lib/supabase/require-repo-for-user";
 
@@ -42,7 +43,12 @@ async function requireChatOwnership(params: {
     .eq("repository_id", repoRow.id)
     .maybeSingle();
   if (chatErr) {
-    return { error: NextResponse.json({ error: chatErr.message }, { status: 500 }) };
+    return {
+      error: NextResponse.json(
+        { error: sanitizeErrorMessage(chatErr.message) },
+        { status: 500 },
+      ),
+    };
   }
   if (!chatRow) {
     return { error: NextResponse.json({ error: "Chat not found" }, { status: 404 }) };
@@ -71,7 +77,10 @@ export async function GET(_request: Request, { params }: RouteParams) {
     .eq("chat_id", context.chatRow.id)
     .order("created_at", { ascending: true });
   if (messagesError) {
-    return NextResponse.json({ error: messagesError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: sanitizeErrorMessage(messagesError.message) },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({
@@ -99,7 +108,10 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
     .delete()
     .eq("chat_id", context.chatRow.id);
   if (deleteMessagesError) {
-    return NextResponse.json({ error: deleteMessagesError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: sanitizeErrorMessage(deleteMessagesError.message) },
+      { status: 500 },
+    );
   }
 
   const { error: deleteChatError } = await context.supabase
@@ -107,7 +119,10 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
     .delete()
     .eq("id", context.chatRow.id);
   if (deleteChatError) {
-    return NextResponse.json({ error: deleteChatError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: sanitizeErrorMessage(deleteChatError.message) },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ ok: true });

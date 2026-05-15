@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import {
   indexRepositoryEmbeddings,
   resolveCommitShaForIndexing,
   shouldSkipEmbeddingReindex,
 } from "@/lib/ai/index-repository-embeddings";
+import {
+  checkRateLimit,
+  rateLimitExceededResponse,
+} from "@/lib/security/rate-limit";
+import { sanitizeErrorMessage } from "@/lib/security/sanitize-error-message";
 import { createClient } from "@/lib/supabase/server";
 import { getSavedRepositoryForIndexing } from "@/lib/supabase/require-repo-for-user";
 
@@ -20,6 +26,12 @@ type NdjsonEvent =
       indexed_at?: string | null;
     }
   | { type: "error"; message: string };
+
+const querySchema = z.object({
+  stream: z.enum(["0", "1", "true", "false"]).optional(),
+  force: z.enum(["0", "1", "true", "false", "hard"]).optional(),
+  hard: z.enum(["0", "1", "true", "false"]).optional(),
+});
 
 function ndjsonResponse(
   execute: (send: (e: NdjsonEvent) => void) => Promise<void>,
@@ -72,9 +84,23 @@ export async function POST(request: Request, { params }: RouteParams) {
   const repoNorm = repoParam.toLowerCase();
 
   const url = new URL(request.url);
-  const wantStream =
-    url.searchParams.get("stream") === "1" ||
-    url.searchParams.get("stream") === "true";
+  const queryParsed = querySchema.safeParse({
+    stream: url.searchParams.get("stream") ?? undefined,
+    force: url.searchParams.get("force") ?? undefined,
+    hard: url.searchParams.get("hard") ?? undefined,
+  });
+  if (!queryParsed.success) {
+    return NextResponse.json(
+      { error: queryParsed.error.flatten().fieldErrors },
+      { status: 400 },
+    );
+  }
+  const query = queryParsed.data;
+
+  const wantStream = query.stream === "1" || query.stream === "true";
+  const force = query.force === "1" || query.force === "true";
+  const hardForce =
+    query.force === "hard" || query.hard === "1" || query.hard === "true";
 
   const supabase = await createClient();
   const {
@@ -84,6 +110,20 @@ export async function POST(request: Request, { params }: RouteParams) {
 
   if (authError || !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const indexRateLimit = checkRateLimit({
+    request,
+    namespace: "repos:index-embeddings",
+    userId: user.id,
+    max: 8,
+    windowMs: 10 * 60 * 1000,
+  });
+  if (!indexRateLimit.allowed) {
+    return rateLimitExceededResponse(
+      indexRateLimit,
+      "Too many indexing requests. Please wait before re-indexing again.",
+    );
   }
 
   const repoRow = await getSavedRepositoryForIndexing(
@@ -123,14 +163,6 @@ export async function POST(request: Request, { params }: RouteParams) {
       }
 
       send({ type: "progress", percent: 2, stage: "Resolved commit…" });
-
-      const force =
-        url.searchParams.get("force") === "1" ||
-        url.searchParams.get("force") === "true";
-      const hardForce =
-        url.searchParams.get("force") === "hard" ||
-        url.searchParams.get("hard") === "1" ||
-        url.searchParams.get("hard") === "true";
 
       if (
         (!force || !hardForce) &&
@@ -199,14 +231,6 @@ export async function POST(request: Request, { params }: RouteParams) {
       );
     }
 
-    const force =
-      url.searchParams.get("force") === "1" ||
-      url.searchParams.get("force") === "true";
-    const hardForce =
-      url.searchParams.get("force") === "hard" ||
-      url.searchParams.get("hard") === "1" ||
-      url.searchParams.get("hard") === "true";
-
     if (
       (!force || !hardForce) &&
       shouldSkipEmbeddingReindex({
@@ -248,6 +272,9 @@ export async function POST(request: Request, { params }: RouteParams) {
         { status: 503 },
       );
     }
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: sanitizeErrorMessage(message) },
+      { status: 500 },
+    );
   }
 }

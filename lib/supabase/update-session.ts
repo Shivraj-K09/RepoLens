@@ -1,7 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { assertPublicAnonKey } from "@/lib/supabase/key-safety";
 
 let loggedMissingSupabaseEnv = false;
+
+function isProtectedAppPath(pathname: string): boolean {
+  return pathname === "/repo" || pathname.startsWith("/repo/");
+}
 
 /**
  * Refreshes the Supabase auth session and syncs cookies on the response.
@@ -25,6 +30,7 @@ export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   });
+  assertPublicAnonKey(supabaseAnonKey, "proxy");
 
   const supabase = createServerClient(
     supabaseUrl,
@@ -55,7 +61,21 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const pathname = request.nextUrl.pathname;
+  if (!user && isProtectedAppPath(pathname)) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/";
+    redirectUrl.searchParams.set("redirect", pathname);
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+    for (const cookie of supabaseResponse.cookies.getAll()) {
+      redirectResponse.cookies.set(cookie);
+    }
+    return redirectResponse;
+  }
 
   return supabaseResponse;
 }

@@ -3,7 +3,7 @@
 import { Streamdown, type Components } from "streamdown";
 import { createCodePlugin } from "@streamdown/code";
 import { File as FileIcon, Folder as FolderIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Children, isValidElement, type ReactNode } from "react";
 import { cn } from "./utils/cn";
 
@@ -45,6 +45,16 @@ export type MarkdownProps = {
   className?: string;
   textContrast?: "normal" | "high";
 };
+
+function sanitizeMarkdownHref(href: string): string | null {
+  const value = href.trim();
+  if (!value) return null;
+  if (value.startsWith("#")) return value;
+  if (value.startsWith("/")) return value;
+  if (value.startsWith("mailto:") || value.startsWith("tel:")) return value;
+  if (/^https?:\/\//i.test(value)) return value;
+  return null;
+}
 
 function readNodeText(node: unknown): string {
   if (typeof node === "string") return node;
@@ -96,7 +106,6 @@ const code = createCodePlugin({
 });
 
 export function Markdown({ content, className }: MarkdownProps) {
-  const router = useRouter();
   const safeContent = normalizeCodeFenceLanguages(
     fixNumberedListBreaks(content),
   );
@@ -234,14 +243,19 @@ export function Markdown({ content, className }: MarkdownProps) {
     ),
     a: ({ href, children, ...props }) => {
       if (!href) return <span>{children}</span>;
-      const isExternal = href.startsWith("http") || href.startsWith("mailto:");
-      const isInternalRoute = !isExternal && href.startsWith("/");
+      const safeHref = sanitizeMarkdownHref(href);
+      if (!safeHref) return <span>{children}</span>;
+      const isExternal =
+        /^https?:\/\//i.test(safeHref) || safeHref.startsWith("mailto:");
+      const isInternalRoute = !isExternal && safeHref.startsWith("/");
       const isRepoCodeLink =
-        !isExternal && href.startsWith("/repo/") && href.includes("?tab=code");
+        !isExternal &&
+        safeHref.startsWith("/repo/") &&
+        safeHref.includes("?tab=code");
       let isDirLink = false;
       if (isRepoCodeLink) {
         try {
-          const url = new URL(href, "http://localhost");
+          const url = new URL(safeHref, "http://localhost");
           const kind = url.searchParams.get("kind");
           const path = (url.searchParams.get("path") ?? "").trim();
           const leaf = path.split("/").filter(Boolean).at(-1) ?? "";
@@ -257,18 +271,30 @@ export function Markdown({ content, className }: MarkdownProps) {
           isDirLink = false;
         }
       }
-      return (
-        <a
-          {...props}
-          href={href}
-          target={isExternal ? "_blank" : undefined}
-          rel={isExternal ? "noopener noreferrer" : undefined}
-          onClick={(event) => {
-            if (!isInternalRoute) return;
-            event.preventDefault();
-            if (isRepoCodeLink && typeof window !== "undefined") {
+      if (isExternal) {
+        return (
+          <a
+            {...props}
+            href={safeHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              "an-md-link hover:underline underline-offset-2 text-an-primary-color",
+            )}
+          >
+            {children}
+          </a>
+        );
+      }
+      if (isInternalRoute) {
+        return (
+          <Link
+            {...props}
+            href={safeHref}
+            onClick={(event) => {
+              if (!isRepoCodeLink || typeof window === "undefined") return;
               try {
-                const url = new URL(href, window.location.origin);
+                const url = new URL(safeHref, window.location.origin);
                 const parts = url.pathname.split("/").filter(Boolean);
                 if (parts.length >= 3 && parts[0] === "repo") {
                   const owner = decodeURIComponent(parts[1] ?? "");
@@ -276,36 +302,49 @@ export function Markdown({ content, className }: MarkdownProps) {
                   const path = url.searchParams.get("path") ?? "";
                   const tab = url.searchParams.get("tab") ?? "code";
                   if (owner && repo && path && tab === "code") {
+                    event.preventDefault();
                     window.dispatchEvent(
                       new CustomEvent("repo-open-path", {
                         detail: { owner, repo, path },
                       }),
                     );
-                    return;
                   }
                 }
               } catch {
-                // fall through to router navigation
+                /* Link performs default navigation */
               }
-            }
-            router.push(href);
-          }}
+            }}
+            className={cn(
+              "an-md-link hover:underline underline-offset-2 text-an-primary-color",
+              isRepoCodeLink &&
+                "inline-flex items-center gap-1 text-inherit no-underline hover:underline",
+            )}
+          >
+            {isRepoCodeLink ? (
+              isDirLink ? (
+                <FolderIcon
+                  aria-hidden
+                  className="size-3.5 shrink-0 opacity-80"
+                />
+              ) : (
+                <FileIcon
+                  aria-hidden
+                  className="size-3.5 shrink-0 opacity-80"
+                />
+              )
+            ) : null}
+            {children}
+          </Link>
+        );
+      }
+      return (
+        <a
+          {...props}
+          href={safeHref}
           className={cn(
             "an-md-link hover:underline underline-offset-2 text-an-primary-color",
-            isRepoCodeLink &&
-              "inline-flex items-center gap-1 text-inherit no-underline hover:underline",
           )}
         >
-          {isRepoCodeLink ? (
-            isDirLink ? (
-              <FolderIcon
-                aria-hidden
-                className="size-3.5 shrink-0 opacity-80"
-              />
-            ) : (
-              <FileIcon aria-hidden className="size-3.5 shrink-0 opacity-80" />
-            )
-          ) : null}
           {children}
         </a>
       );

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ChatStatus } from "ai";
+import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 
@@ -18,7 +19,7 @@ type LandingRepoInputProps = {
  * Agent Elements `InputBar` — composed for a single GitHub repository URL (see agent-elements skill).
  */
 export function LandingRepoInput({ className }: LandingRepoInputProps) {
-  const router = useRouter();
+  const { push } = useRouter();
   const [status] = useState<ChatStatus>("ready");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -55,12 +56,18 @@ export function LandingRepoInput({ className }: LandingRepoInputProps) {
           return;
         }
 
-        router.push(`/repo/${parsed.data.owner}/${parsed.data.repo}`);
+        push(`/repo/${parsed.data.owner}/${parsed.data.repo}`);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not save repository.";
+        setError(message);
       } finally {
         setPending(false);
       }
     },
-    [router],
+    [push],
   );
 
   const onStop = useCallback(() => {}, []);
@@ -83,6 +90,11 @@ export function LandingRepoInput({ className }: LandingRepoInputProps) {
           role="status"
         >
           {error}
+        </p>
+      ) : pending ? (
+        <p className="mt-2 flex items-center justify-center gap-1.5 text-[12px] text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" />
+          Saving repository...
         </p>
       ) : null}
     </div>

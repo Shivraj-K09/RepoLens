@@ -76,6 +76,7 @@ export function buildRagPrompt(
   params: {
     repository: { owner: string; repo: string; commitSha: string };
     question: string;
+    originalQuestion?: string;
     contextChunks: MatchedChunkRow[];
     readmeText?: string | null;
   },
@@ -83,8 +84,9 @@ export function buildRagPrompt(
   system: string;
   user: string;
 } {
-  const { repository, question, contextChunks, readmeText } = params;
-  const q = question.toLowerCase();
+  const { repository, question, originalQuestion, contextChunks, readmeText } =
+    params;
+  const q = (originalQuestion ?? question).toLowerCase();
   const isSummaryIntent =
     q.includes("summarize") ||
     q.includes("summary") ||
@@ -93,6 +95,16 @@ export function buildRagPrompt(
   const isLocationIntent =
     /\b(where|which|location|located|path)\b/.test(q) ||
     /\b(where can i|where do i|where is)\b/.test(q);
+  const isStructureIntent =
+    /\b(file structure|project structure|top[- ]level|tree|directories|directory|folders?|files?)\b/.test(
+      q,
+    ) || /\blist\b/.test(q);
+  const isChangeIntent =
+    /\b(edit|update|modify|change|what to edit)\b/.test(q) ||
+    /\b(where can i|where do i)\b/.test(q);
+  const isMultiPartQuestion =
+    /\b(and|also)\b/.test(q) ||
+    ((q.match(/\?/g) ?? []).length >= 2 && q.length > 24);
 
   const readmeTrimmed = readmeText?.trim() || "";
   const readmeCap = isSummaryIntent ? 7_000 : 1_200;
@@ -123,11 +135,16 @@ export function buildRagPrompt(
 
   const system = [
     "You are a repository assistant.",
+    "Never use hardcoded or canned answers.",
+    "Do not answer from prior memory or generic framework assumptions.",
+    "Every factual claim must be grounded in the provided repository evidence (paths, excerpts, or repository metadata context).",
+    "If evidence is insufficient for a specific claim, explicitly say you cannot verify that claim from this repository context.",
     "Answer using semantic excerpts as the primary source of truth.",
     "Use the README snapshot only as secondary high-level context.",
     "Focus on the repository/codebase, not company marketing.",
     "Prefer concrete facts from provided content and mention file paths when useful.",
     "When semantic excerpts are available, prioritize them over README phrasing.",
+    "Use README details only when they are directly relevant and supported by repository code context.",
     "Do not drift into company/product background unless the user explicitly asks.",
     "Never invent file or folder paths; only mention paths that appear in the provided context.",
     "For folder/file listing questions, output only exact paths from context and say when the provided tree is capped.",
@@ -135,7 +152,13 @@ export function buildRagPrompt(
     "If the user implies a target (feature/folder/tool) without @mention, infer the most likely matching path from provided excerpts and answer directly with that path.",
     "For 'where is X' questions, prefer specific file paths over broad directories when a concrete file path exists in the provided context.",
     "If an 'Authoritative location candidates' block is present, prioritize the highest-confidence matching file path from that block.",
-    "For location/change questions, answer with: (1) exact path, (2) what to edit there in 1-3 bullets.",
+    isChangeIntent
+      ? "For location/change questions, answer with: (1) exact path, (2) what to edit there in 1-3 bullets."
+      : "",
+    isMultiPartQuestion
+      ? "When the user asks multiple things in one question, answer every part explicitly in separate bullets. Do not omit any sub-question."
+      : "",
+    "If the user asks what technology/system is used (e.g., auth, storage, queue), state the concrete technology name from repository evidence.",
     "If repository-specific workflow guidance context is provided, use it to explain exactly how to update docs and open a PR in this repository.",
     "When giving a path answer, always output a full repository-relative path (with '/' separators), not only a filename.",
     "Do not mention retrieval internals (e.g., 'semantic excerpts' or 'context not provided') in the final answer.",
@@ -146,7 +169,9 @@ export function buildRagPrompt(
       ? "For this question type, prioritize internal repository paths and avoid external URLs."
       : "",
     isSummaryIntent
-      ? "For repository summaries, output: (1) one-sentence purpose, (2) who this repo is for, (3) key capabilities in bullets, (4) project structure with file/directory references."
+      ? isStructureIntent
+        ? "For repository summaries, output: (1) one-sentence purpose, (2) who this repo is for, (3) key capabilities in bullets, (4) project structure with file/directory references."
+        : "For repository summaries, output: (1) one-sentence purpose, (2) who this repo is for, (3) key capabilities in bullets, (4) key implementation areas from code excerpts. Do not dump broad file/folder listings unless the user asked for structure."
       : "",
   ].join(" ");
 

@@ -1,12 +1,15 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { assertPublicAnonKey } from "@/lib/supabase/key-safety";
 
 export async function createClient() {
   const cookieStore = await cookies();
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  assertPublicAnonKey(anonKey, "server");
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    anonKey,
     {
       cookies: {
         getAll() {

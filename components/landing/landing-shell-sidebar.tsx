@@ -3,7 +3,6 @@
 import { GitHubMark } from "@/components/icons/github-mark";
 import { LandingAccountMenu } from "@/components/landing/landing-account-menu";
 import { LandingRepoHistoryAside } from "@/components/landing/landing-repo-history-aside";
-import type { LandingAuthorLinks } from "@/components/landing/landing-shell-types";
 import type { LandingAuthSnapshot } from "@/lib/auth/landing-auth";
 import type { SidebarRepoVisit } from "@/lib/supabase/repo-visit-history";
 import {
@@ -22,7 +21,6 @@ import { FolderGit } from "lucide-react";
 
 export type LandingShellSidebarProps = {
   auth: LandingAuthSnapshot | null;
-  author: LandingAuthorLinks;
   repoVisitHistory: SidebarRepoVisit[];
 };
 
@@ -32,12 +30,10 @@ function startGithubOAuth() {
 
 export function LandingShellSidebar({
   auth,
-  author,
   repoVisitHistory,
 }: LandingShellSidebarProps) {
   const { state, isMobile } = useSidebar();
   const compactRail = !isMobile && state === "collapsed";
-  const hasAuthor = Boolean(author.github || author.linkedIn);
 
   return (
     <Sidebar collapsible="icon">
@@ -99,44 +95,6 @@ export function LandingShellSidebar({
             initialVisits={repoVisitHistory}
           />
         </div>
-        {hasAuthor ? (
-          <div
-            className={cn(
-              "shrink-0 border-sidebar-border border-t p-3",
-              compactRail &&
-                "pointer-events-none invisible select-none border-transparent",
-            )}
-            aria-hidden={compactRail ? true : undefined}
-          >
-            <p className="mb-1.5 text-[10px] text-sidebar-foreground/50">
-              Author
-            </p>
-            <div className="flex flex-col gap-1.5 text-xs">
-              {author.github ? (
-                <Link
-                  href={author.github}
-                  prefetch={false}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="truncate text-sidebar-foreground/80 underline-offset-2 hover:text-sidebar-foreground hover:underline"
-                >
-                  GitHub profile
-                </Link>
-              ) : null}
-              {author.linkedIn ? (
-                <Link
-                  href={author.linkedIn}
-                  prefetch={false}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="truncate text-sidebar-foreground/80 underline-offset-2 hover:text-sidebar-foreground hover:underline"
-                >
-                  LinkedIn
-                </Link>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
       </SidebarContent>
 
       <SidebarFooter className="flex h-auto min-h-0 shrink-0 flex-col gap-0 p-0 px-3 pt-1 pb-1.5">

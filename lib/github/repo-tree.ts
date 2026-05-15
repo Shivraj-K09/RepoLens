@@ -58,13 +58,15 @@ export async function githubListRepoTreePaths(
       }
     }
 
-    files.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-    const dirList = [...dirs].sort((a, b) =>
+    const sortedFiles = files.toSorted((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" }),
+    );
+    const dirList = [...dirs].toSorted((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: "base" }),
     );
 
     return {
-      files,
+      files: sortedFiles,
       dirs: dirList,
       truncated: Boolean(treeRes.data.truncated),
     };

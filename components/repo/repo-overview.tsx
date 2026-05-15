@@ -54,14 +54,14 @@ export function RepoOverviewContent({
             <dt className="sr-only">Default branch</dt>
             <dd>
               Branch{" "}
-              <span className="text-foreground/90">{defaultBranch ?? "—"}</span>
+              <span className="text-foreground/90">{defaultBranch ?? "-"}</span>
             </dd>
           </div>
           <div>
             <dt className="sr-only">HEAD commit</dt>
             <dd>
               HEAD{" "}
-              <span className="break-all text-foreground/85">{shaShort ?? "—"}</span>
+              <span className="break-all text-foreground/85">{shaShort ?? "-"}</span>
             </dd>
           </div>
           <div>
@@ -106,7 +106,7 @@ export function RepoOverviewContent({
         </div>
         {techStack == null ? (
           <p className="max-w-xl text-muted-foreground text-[12px] leading-relaxed">
-            Default branch unavailable — reload after metadata resolves, or set{" "}
+            Default branch unavailable: reload after metadata resolves, or set{" "}
             <span className="font-mono text-foreground/90">GITHUB_TOKEN</span>.
           </p>
         ) : (

@@ -1,12 +1,21 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { githubListRepoTreePaths } from "@/lib/github/repo-tree";
+import {
+  checkRateLimit,
+  rateLimitExceededResponse,
+} from "@/lib/security/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 import { getSavedRepositoryForIndexing } from "@/lib/supabase/require-repo-for-user";
 
 type RouteParams = { params: Promise<{ owner: string; repo: string }> };
 
 type MentionEntry = { path: string; kind: "file" | "dir" };
+
+const querySchema = z.object({
+  limit: z.coerce.number().int().min(500).max(25_000).optional(),
+});
 
 function buildMentionEntries(filePaths: string[]): MentionEntry[] {
   const files = new Set<string>();
@@ -23,11 +32,11 @@ function buildMentionEntries(filePaths: string[]): MentionEntry[] {
   }
 
   const dirEntries: MentionEntry[] = [...dirs]
-    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+    .toSorted((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
     .map((path) => ({ path, kind: "dir" as const }));
 
   const fileEntries: MentionEntry[] = [...files]
-    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+    .toSorted((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
     .map((path) => ({ path, kind: "file" as const }));
 
   return [...dirEntries, ...fileEntries];
@@ -46,6 +55,20 @@ export async function GET(request: Request, { params }: RouteParams) {
 
   if (authError || !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const indexedPathsRateLimit = checkRateLimit({
+    request,
+    namespace: "repos:indexed-paths",
+    userId: user.id,
+    max: 60,
+    windowMs: 60 * 1000,
+  });
+  if (!indexedPathsRateLimit.allowed) {
+    return rateLimitExceededResponse(
+      indexedPathsRateLimit,
+      "Too many indexed path requests. Please retry shortly.",
+    );
   }
 
   const repoRow = await getSavedRepositoryForIndexing(user.id, ownerNorm, repoNorm);
@@ -71,10 +94,16 @@ export async function GET(request: Request, { params }: RouteParams) {
   }
 
   const entries = buildMentionEntries(tree.files);
-  const limit = Math.min(
-    Math.max(Number(new URL(request.url).searchParams.get("limit") || 12000), 500),
-    25000,
-  );
+  const queryParsed = querySchema.safeParse({
+    limit: new URL(request.url).searchParams.get("limit") ?? undefined,
+  });
+  if (!queryParsed.success) {
+    return NextResponse.json(
+      { error: queryParsed.error.flatten().fieldErrors },
+      { status: 400 },
+    );
+  }
+  const limit = queryParsed.data.limit ?? 12_000;
   const limited = entries.slice(0, limit);
   return NextResponse.json(
     {

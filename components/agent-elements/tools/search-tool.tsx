@@ -14,6 +14,23 @@ import { toolArgsMerged, toolOutputRecord } from "../utils/format-tool";
 
 export type SearchResult = { source: SourceType; title: string; date: string };
 
+const EMPTY_SEARCH_RESULTS: SearchResult[] = [];
+
+function SearchStepCompleteTracker({
+  step,
+  stepStates,
+  onStepComplete,
+}: {
+  step: Extract<TimelineStep, { type: "tool-call" }>;
+  stepStates: Record<string, StepState>;
+  onStepComplete: (id: string) => void;
+}) {
+  useToolComplete(stepStates[step.id] === "animating", step.duration, () =>
+    onStepComplete(step.id),
+  );
+  return null;
+}
+
 export type SearchGroupRichProps = {
   toolSteps: Extract<TimelineStep, { type: "tool-call" }>[];
   stepStates: Record<string, StepState>;
@@ -26,7 +43,7 @@ export function SearchGroupRich({
   toolSteps,
   stepStates,
   onStepComplete,
-  results = [],
+  results = EMPTY_SEARCH_RESULTS,
   defaultOpen,
 }: SearchGroupRichProps) {
   const anyAnimating = toolSteps.some((s) => stepStates[s.id] === "animating");
@@ -39,21 +56,15 @@ export function SearchGroupRich({
   // label. Once results arrive the panel becomes meaningful.
   const hasExpandableContent = totalResults > 0;
 
-  function CompleteTracker({
-    step,
-  }: {
-    step: Extract<TimelineStep, { type: "tool-call" }>;
-  }) {
-    useToolComplete(stepStates[step.id] === "animating", step.duration, () =>
-      onStepComplete(step.id),
-    );
-    return null;
-  }
-
   return (
     <>
       {toolSteps.map((step) => (
-        <CompleteTracker key={step.id} step={step} />
+        <SearchStepCompleteTracker
+          key={step.id}
+          step={step}
+          stepStates={stepStates}
+          onStepComplete={onStepComplete}
+        />
       ))}
       <ToolRowBase
         shimmerLabel="Searching..."
@@ -71,16 +82,16 @@ export function SearchGroupRich({
           </div>
           <div className="max-h-[200px] overflow-y-auto bg-background">
             <div className="flex flex-col gap-1 p-1">
-              {results.map((result, i) => (
+              {results.map((result) => (
                 <div
-                  key={i}
+                  key={`${result.source}:${result.title}:${result.date}`}
                   className={cn(
                     "flex items-center gap-2 px-2 py-1 rounded-[calc(var(--an-tool-border-radius)-4px)] cursor-default",
                     "hover:bg-muted/50",
                   )}
                 >
-                  <div className="flex items-center justify-center w-4 h-4 shrink-0 text-muted-foreground">
-                    <IconFileText className="w-4 h-4" />
+                  <div className="flex items-center justify-center size-4 shrink-0 text-muted-foreground">
+                    <IconFileText className="size-4" />
                   </div>
                   <span className="text-sm text-foreground/90 truncate flex-1 min-w-0">
                     {result.title}
@@ -106,22 +117,20 @@ export type SearchToolProps = {
 
 function normalizeResults(value: unknown): SearchResult[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  const parsed = value
-    .map((item) => {
-      if (!item || typeof item !== "object") return null;
-      const source = (item as { source?: unknown }).source;
-      const title = (item as { title?: unknown }).title;
-      const date = (item as { date?: unknown }).date;
-      if (
-        typeof source !== "string" ||
-        typeof title !== "string" ||
-        typeof date !== "string"
-      ) {
-        return null;
-      }
-      return { source: source as SourceType, title, date };
-    })
-    .filter((item): item is SearchResult => Boolean(item));
+  const parsed = value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const source = (item as { source?: unknown }).source;
+    const title = (item as { title?: unknown }).title;
+    const date = (item as { date?: unknown }).date;
+    if (
+      typeof source !== "string" ||
+      typeof title !== "string" ||
+      typeof date !== "string"
+    ) {
+      return [];
+    }
+    return [{ source: source as SourceType, title, date } satisfies SearchResult];
+  });
   return parsed.length > 0 ? parsed : undefined;
 }
 

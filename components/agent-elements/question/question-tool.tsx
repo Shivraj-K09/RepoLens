@@ -115,7 +115,7 @@ function QuestionToolInner({ part }: QuestionToolProps) {
     <div className="rounded-an-tool-border-radius border border-border bg-an-tool-background overflow-hidden">
       <div className="h-7 border-b border-border px-3 flex items-center justify-between text-xs text-an-tool-color-muted">
         <div className="inline-flex items-center gap-1.5">
-          <IconMessageCircleQuestion className="w-3.5 h-3.5" />
+          <IconMessageCircleQuestion className="size-3.5" />
           Question
         </div>
         {showNavigation && (
@@ -127,7 +127,7 @@ function QuestionToolInner({ part }: QuestionToolProps) {
               className="size-5 inline-flex items-center justify-center rounded-[4px] hover:bg-an-background-secondary disabled:opacity-40"
               aria-label="Previous question"
             >
-              <IconChevronUp className="w-3.5 h-3.5" />
+              <IconChevronUp className="size-3.5" />
             </button>
             <span>
               {clampedIndex} of {totalQuestions}
@@ -139,7 +139,7 @@ function QuestionToolInner({ part }: QuestionToolProps) {
               className="size-5 inline-flex items-center justify-center rounded-[4px] hover:bg-an-background-secondary disabled:opacity-40"
               aria-label="Next question"
             >
-              <IconChevronDown className="w-3.5 h-3.5" />
+              <IconChevronDown className="size-3.5" />
             </button>
           </div>
         )}

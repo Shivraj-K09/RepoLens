@@ -1,3 +1,5 @@
+import "server-only";
+
 import { Octokit } from "@octokit/rest";
 
 const USER_AGENT = "house-assignment/0.1.0 (RepoLens; Next.js server)";

@@ -20,6 +20,13 @@ type RepoReadmeProps = {
  */
 const readmeSanitizeSchema: SanitizeSchema = {
   ...defaultSchema,
+  // Restrict URL-bearing attributes to safe protocols only.
+  protocols: {
+    ...(defaultSchema.protocols ?? {}),
+    href: ["http", "https", "mailto", "tel"],
+    src: ["http", "https"],
+    srcSet: ["http", "https"],
+  },
   attributes: {
     ...defaultSchema.attributes,
     a: [...(defaultSchema.attributes?.a ?? []), "target", "rel"],

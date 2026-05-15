@@ -6,7 +6,6 @@ import React, {
   useCallback,
   useState,
   useMemo,
-  useSyncExternalStore,
 } from "react";
 import type { UIMessage, ChatStatus } from "ai";
 import { cn } from "./utils/cn";
@@ -144,22 +143,31 @@ function isV5ToolPart(part: unknown): part is ToolPartBase {
 }
 
 function getTextFromParts(parts: unknown[], joiner: string): string {
-  return parts
-    .filter(isTextPart)
-    .map((part) => part.text)
-    .join(joiner);
+  const chunks: string[] = [];
+  for (const part of parts) {
+    if (isTextPart(part)) chunks.push(part.text);
+  }
+  return chunks.join(joiner);
 }
 
-function formatTimestamp(date: Date): string {
-  const now = new Date();
+function formatTimestamp(date: Date, referenceNow: Date): string {
   const isSameDay =
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate();
+    date.getFullYear() === referenceNow.getFullYear() &&
+    date.getMonth() === referenceNow.getMonth() &&
+    date.getDate() === referenceNow.getDate();
   if (isSameDay) {
     return timeFormatter.format(date);
   }
   return dateFormatter.format(date);
+}
+
+function quickStableKey(seed: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i += 1) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
 }
 
 function CopyButton({
@@ -198,16 +206,16 @@ function CopyButton({
         "opacity-50 bg-transparent hover:opacity-100 hover:bg-an-foreground/10",
       )}
     >
-      <div className="relative w-3.5 h-3.5">
+      <div className="relative size-3.5">
         <IconCopy
           className={cn(
-            "absolute inset-0 w-3.5 h-3.5 text-an-foreground-muted transition-[opacity,transform] duration-150 ease-out",
+            "absolute inset-0 size-3.5 text-an-foreground-muted transition-[opacity,transform] duration-150 ease-out",
             copied ? "opacity-0 scale-50" : "opacity-100 scale-100",
           )}
         />
         <IconCheck
           className={cn(
-            "absolute inset-0 w-3.5 h-3.5 text-an-foreground-muted transition-[opacity,transform] duration-150 ease-out",
+            "absolute inset-0 size-3.5 text-an-foreground-muted transition-[opacity,transform] duration-150 ease-out",
             copied ? "opacity-100 scale-100" : "opacity-0 scale-50",
           )}
         />
@@ -235,6 +243,8 @@ function MessageToolbar({
 }) {
   return (
     <div
+      role="toolbar"
+      aria-label="Message actions"
       className={cn(
         "flex items-center gap-1 pt-1 text-xs text-an-foreground-muted/70 opacity-0 transition-opacity duration-100 pointer-events-none",
         heightClass,
@@ -294,11 +304,16 @@ export const MessageList = memo(function MessageList({
   const [activeCopyId, setActiveCopyId] = useState<string | null>(null);
   const [showAssistantBreathingSpace, setShowAssistantBreathingSpace] =
     useState(false);
-  const isMounted = useSyncExternalStore(
-    () => () => {},
-    () => true,
-    () => false,
-  );
+  const [formatClock, setFormatClock] = useState<Date | null>(null);
+
+  useEffect(() => {
+    let intervalId = 0;
+    queueMicrotask(() => {
+      setFormatClock(new Date());
+      intervalId = window.setInterval(() => setFormatClock(new Date()), 60_000);
+    });
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   const CustomUserMessage = slots?.UserMessage || UserMessage;
   const CustomToolRenderer = slots?.ToolRenderer || DefaultToolRenderer;
@@ -530,8 +545,11 @@ export const MessageList = memo(function MessageList({
                     const userCopyKey = `user-${turn.userMsg.id}`;
                     const userCopyVisible = activeCopyId === userCopyKey;
                     const userTimestamp =
-                      isMounted && userCreatedAt
-                        ? formatTimestamp(new Date(userCreatedAt))
+                      formatClock && userCreatedAt
+                        ? formatTimestamp(
+                            new Date(userCreatedAt),
+                            formatClock,
+                          )
                         : undefined;
                     // Only render the toolbar when it has content — copy
                     // button (gated by showCopyToolbar) or a timestamp.
@@ -668,16 +686,16 @@ function AssistantParts({
 
   const { elements } = useMemo(() => {
     const elems: React.ReactNode[] = [];
-    const taskPartIds = new Set(
-      parts
-        .filter(
-          (p): p is ToolPartBase =>
-            isV5ToolPart(p) &&
-            (p.type === "tool-Task" || p.type === "tool-Agent") &&
-            typeof p.toolCallId === "string",
-        )
-        .map((p) => p.toolCallId!),
-    );
+    const taskPartIds = new Set<string>();
+    for (const p of parts) {
+      if (
+        isV5ToolPart(p) &&
+        (p.type === "tool-Task" || p.type === "tool-Agent") &&
+        typeof p.toolCallId === "string"
+      ) {
+        taskPartIds.add(p.toolCallId);
+      }
+    }
     const nestedToolsMap = new Map<string, ToolPartBase[]>();
     const nestedToolIds = new Set<string>();
 
@@ -708,7 +726,7 @@ function AssistantParts({
         if (text) {
           elems.push(
             <div
-              key={`${msg.id}-text-${i}`}
+              key={`${msg.id}-txt-${quickStableKey(text)}`}
               className="group/assistant-text text-[13px]"
             >
               <Markdown
@@ -725,7 +743,7 @@ function AssistantParts({
       if (isErrorPart(part)) {
         elems.push(
           <ErrorMessage
-            key={`${msg.id}-error-${i}`}
+            key={`${msg.id}-err-${quickStableKey(part.message)}`}
             title={part.title}
             message={part.message}
           />,

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { RepoDetailClient } from "@/components/repo/repo-detail-client";
@@ -13,12 +14,22 @@ type RepoDetailPageProps = {
   searchParams?: Promise<{ tab?: string; path?: string }>;
 };
 
+export async function generateMetadata({
+  params,
+}: RepoDetailPageProps): Promise<Metadata> {
+  const { owner, repo } = await params;
+  const title = `${owner}/${repo}`;
+  return {
+    title,
+    description: `Repository overview and chat for ${owner}/${repo}.`,
+  };
+}
+
 export default async function RepoDetailPage({
   params,
   searchParams,
 }: RepoDetailPageProps) {
   const { owner: routeOwner, repo: routeRepo } = await params;
-  const query = (await searchParams) ?? {};
   const ownerSlug = routeOwner.toLowerCase();
   const repoSlug = routeRepo.toLowerCase();
 
@@ -36,6 +47,8 @@ export default async function RepoDetailPage({
       </div>
     );
   }
+
+  const query = (await searchParams) ?? {};
 
   let { data: repoRow } = await supabase
     .from("repositories")

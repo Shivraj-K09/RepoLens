@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import type { UIMessage } from "ai";
+import Image from "next/image";
 import { cn } from "./utils/cn";
 import { FileAttachment } from "./input/file-attachment";
 import { ImageLightbox } from "./image-lightbox";
@@ -118,25 +119,42 @@ export const UserMessage = memo(function UserMessage({
   return (
     <div className={cn("flex flex-col items-end gap-1", className)}>
       {images.length > 0 &&
-        images.map((url, i) => (
-          <div
-            key={i}
-            className={cn(
-              "max-w-[200px] p-1.5 bg-an-foreground/4 rounded-an-message",
-              enableImagePreview && "cursor-pointer",
-            )}
-            onClick={
-              enableImagePreview ? () => setLightboxIndex(i) : undefined
-            }
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element -- attachment URLs are arbitrary (e.g. GitHub/blob hosts); next/image remotePatterns would not cover all */}
-            <img
-              src={url}
-              alt="attachment"
-              className="block object-cover max-w-[184px] max-h-[120px] rounded-an-message-inner"
-            />
-          </div>
-        ))}
+        images.map((url, i) =>
+          enableImagePreview ? (
+            <button
+              key={`${message.id}-img-${url}`}
+              type="button"
+              className={cn(
+                "max-w-[200px] p-1.5 bg-an-foreground/4 rounded-an-message border-0 text-left cursor-pointer",
+              )}
+              onClick={() => setLightboxIndex(i)}
+              aria-label={`Open image attachment ${i + 1}`}
+            >
+              <Image
+                src={url}
+                alt=""
+                width={184}
+                height={120}
+                unoptimized
+                className="block object-cover max-w-[184px] max-h-[120px] rounded-an-message-inner"
+              />
+            </button>
+          ) : (
+            <div
+              key={`${message.id}-img-${url}`}
+              className="max-w-[200px] p-1.5 bg-an-foreground/4 rounded-an-message"
+            >
+              <Image
+                src={url}
+                alt=""
+                width={184}
+                height={120}
+                unoptimized
+                className="block object-cover max-w-[184px] max-h-[120px] rounded-an-message-inner"
+              />
+            </div>
+          ),
+        )}
       {enableImagePreview && lightboxImages.length > 0 && (
         <ImageLightbox
           open={lightboxIndex !== null}
@@ -147,10 +165,10 @@ export const UserMessage = memo(function UserMessage({
       )}
       {files.length > 0 && (
         <div className="flex flex-col items-end gap-2">
-          {files.map((file, i) => (
+          {files.map((file) => (
             <FileAttachment
-              key={`${file.filename}-${i}`}
-              id={`${file.filename}-${i}`}
+              key={`${message.id}-file-${file.filename}-${file.size ?? 0}`}
+              id={`${message.id}-file-${file.filename}-${file.size ?? 0}`}
               filename={file.filename}
               size={file.size}
             />

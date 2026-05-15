@@ -5,8 +5,10 @@ const segmentPath = (path: string | undefined | null) => {
   if (!raw) return "";
   return raw
     .split("/")
-    .filter(Boolean)
-    .map((segment) => encodeURIComponent(segment))
+    .flatMap((segment) => {
+      const s = segment.trim();
+      return s ? [encodeURIComponent(s)] : [];
+    })
     .join("/");
 };
 

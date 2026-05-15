@@ -36,6 +36,21 @@ const ROOT_MARKER_MAP: readonly { file: string; label: string }[] = [
 
 const NPM_PRODUCTION_CAP = 36;
 const NPM_DEV_CAP = 18;
+const TECH_STACK_CACHE_TTL_MS = 3 * 60 * 1000;
+const techStackCache = new Map<
+  string,
+  { value: RepoTechStackSummary | null; expiresAt: number }
+>();
+const techStackInflight = new Map<string, Promise<RepoTechStackSummary | null>>();
+
+function hashString(input: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -43,9 +58,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function dependencyKeys(obj: unknown, cap: number): string[] {
   if (!isRecord(obj)) return [];
-  const keys = Object.keys(obj).filter((k) => k.trim() !== "").sort((a, b) =>
-    a.localeCompare(b, undefined, { sensitivity: "base" }),
-  );
+  const keys = Object.keys(obj)
+    .flatMap((k) => (k.trim() !== "" ? [k] : []))
+    .toSorted((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" }),
+    );
   return keys.slice(0, cap);
 }
 
@@ -92,6 +109,26 @@ export async function fetchRepoTechStackSummary(
 ): Promise<RepoTechStackSummary | null> {
   if (!refTrimmed) return null;
 
+  const rootFingerprint =
+    rootEntries === null
+      ? "unknown"
+      : hashString(
+          rootEntries
+            .map((entry) => `${entry.kind}:${entry.path}`)
+            .toSorted((a, b) => a.localeCompare(b))
+            .join("|"),
+        );
+  const cacheKey = `${owner.toLowerCase()}/${repo.toLowerCase()}@${refTrimmed.toLowerCase()}#${rootFingerprint}`;
+  const now = Date.now();
+  const cached = techStackCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+  const inflight = techStackInflight.get(cacheKey);
+  if (inflight) return inflight;
+
+  const task = (async () => {
+
   const filenames = new Set<string>();
   if (Array.isArray(rootEntries)) {
     for (const e of rootEntries) {
@@ -129,7 +166,7 @@ export async function fetchRepoTechStackSummary(
     if (flags.npmParseFailed) npmParseFailed = true;
   }
 
-  const ecoSorted = [...ecosystems].sort((a, b) =>
+  const ecoSorted = [...ecosystems].toSorted((a, b) =>
     a.localeCompare(b, undefined, { sensitivity: "base" }),
   );
 
@@ -139,4 +176,17 @@ export async function fetchRepoTechStackSummary(
     npmDevDeps,
     ...(npmParseFailed ? { npmParseFailed: true as const } : {}),
   };
+  })();
+
+  techStackInflight.set(cacheKey, task);
+  try {
+    const value = await task;
+    techStackCache.set(cacheKey, {
+      value,
+      expiresAt: Date.now() + TECH_STACK_CACHE_TTL_MS,
+    });
+    return value;
+  } finally {
+    techStackInflight.delete(cacheKey);
+  }
 }

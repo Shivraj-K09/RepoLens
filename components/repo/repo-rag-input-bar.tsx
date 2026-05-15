@@ -18,6 +18,8 @@ type RepoRagInputBarProps = InputBarProps & {
 const HOLD_REPEAT_DELAY_MS = 170;
 const HOLD_REPEAT_INTERVAL_MS = 48;
 
+const EMPTY_MENTION_ENTRIES: MentionPathEntry[] = [];
+
 function readMentionQuery(input: string): { query: string; start: number; end: number } | null {
   const m = /(^|\s)@([^\s@]*)$/.exec(input);
   if (!m) return null;
@@ -42,7 +44,7 @@ function scoreMention(path: string, query: string): number {
 }
 
 export function RepoRagInputBar({
-  mentionEntries = [],
+  mentionEntries = EMPTY_MENTION_ENTRIES,
   value,
   onChange,
   disabled,
@@ -54,19 +56,20 @@ export function RepoRagInputBar({
   const suggestionItems = useMemo(() => {
     if (!mentionState) return [];
     const q = mentionState.query.trim();
-    const ranked = mentionEntries
-      .map((entry) => ({ entry, score: scoreMention(entry.path, q) }))
-      .filter((row) => row.score > 0)
-      .sort((a, b) => {
-        if (a.score !== b.score) return b.score - a.score;
-        if (a.entry.kind !== b.entry.kind) return a.entry.kind === "dir" ? -1 : 1;
-        return a.entry.path.localeCompare(b.entry.path, undefined, {
-          sensitivity: "base",
-        });
-      })
-      .slice(0, 80)
-      .map((row) => row.entry);
-    return ranked;
+    const ranked: { entry: MentionPathEntry; score: number }[] = [];
+    for (const entry of mentionEntries) {
+      const score = scoreMention(entry.path, q);
+      if (score > 0) ranked.push({ entry, score });
+    }
+    ranked.sort((a, b) => {
+      if (a.score !== b.score) return b.score - a.score;
+      if (a.entry.kind !== b.entry.kind)
+        return a.entry.kind === "dir" ? -1 : 1;
+      return a.entry.path.localeCompare(b.entry.path, undefined, {
+        sensitivity: "base",
+      });
+    });
+    return ranked.slice(0, 80).map((row) => row.entry);
   }, [mentionEntries, mentionState]);
 
   const [activeIndex, setActiveIndex] = useState(0);

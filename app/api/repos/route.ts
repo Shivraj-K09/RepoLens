@@ -11,6 +11,11 @@ import {
   githubRepoParseErrorMessage,
   safeParseGithubRepoUrl,
 } from "@/lib/github/repo-url";
+import {
+  checkRateLimit,
+  rateLimitExceededResponse,
+} from "@/lib/security/rate-limit";
+import { sanitizeErrorMessage } from "@/lib/security/sanitize-error-message";
 import { createClient } from "@/lib/supabase/server";
 
 const bodySchema = z.object({
@@ -63,6 +68,20 @@ export async function POST(request: Request) {
     );
   }
 
+  const reposWriteRateLimit = checkRateLimit({
+    request,
+    namespace: "repos:create",
+    userId: user.id,
+    max: 30,
+    windowMs: 10 * 60 * 1000,
+  });
+  if (!reposWriteRateLimit.allowed) {
+    return rateLimitExceededResponse(
+      reposWriteRateLimit,
+      "Too many repository add requests. Please retry shortly.",
+    );
+  }
+
   const row = {
     user_id: user.id,
     github_owner: repoRef.data.owner,
@@ -79,7 +98,10 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (findError) {
-    return NextResponse.json({ error: findError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: sanitizeErrorMessage(findError.message) },
+      { status: 500 },
+    );
   }
 
   let repositoryId: string;
@@ -100,7 +122,10 @@ export async function POST(request: Request) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json(
+        { error: sanitizeErrorMessage(error.message) },
+        { status: 500 },
+      );
     }
     baselineRow = data as Record<string, unknown>;
   } else {
@@ -111,7 +136,10 @@ export async function POST(request: Request) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json(
+        { error: sanitizeErrorMessage(error.message) },
+        { status: 500 },
+      );
     }
     baselineRow = data as Record<string, unknown>;
     repositoryId = data.id as string;

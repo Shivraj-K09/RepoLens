@@ -15,6 +15,7 @@ import { InputBar } from "@/components/agent-elements/input-bar";
 import type { InputBarProps } from "@/components/agent-elements/input-bar";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   RepoRagInputBar,
   type MentionPathEntry,
@@ -466,7 +467,7 @@ export function RepoRagChat({
   indexedCommitSha,
   className,
 }: RepoRagChatProps) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [status, setStatus] = useState<ChatStatus>("ready");
   const [chatError, setChatError] = useState<Error | undefined>(undefined);
@@ -485,6 +486,7 @@ export function RepoRagChat({
   const [newChatDraftMode, setNewChatDraftMode] = useState(false);
   const [chatHistoryOpen, setChatHistoryOpen] = useState(false);
   const [chatHistoryLoading, setChatHistoryLoading] = useState(false);
+  const [chatHistoryError, setChatHistoryError] = useState<string | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
 
   /**
@@ -587,13 +589,13 @@ export function RepoRagChat({
   );
 
   const burstRefresh = useCallback(() => {
-    router.refresh();
+    refresh();
     requestAnimationFrame(() => {
-      router.refresh();
+      refresh();
     });
-    setTimeout(() => router.refresh(), 120);
-    setTimeout(() => router.refresh(), 600);
-  }, [router]);
+    setTimeout(() => refresh(), 120);
+    setTimeout(() => refresh(), 600);
+  }, [refresh]);
 
   const runIndexStream = useCallback(
     async (options?: { force?: boolean }) => {
@@ -605,6 +607,7 @@ export function RepoRagChat({
       }
       setResumePollOnly(false);
       setIndexError(null);
+      setChatHistoryError(null);
       setIndexPercent(0);
       setIndexStage("Connecting…");
       setIndexing(true);
@@ -678,7 +681,6 @@ export function RepoRagChat({
           e instanceof Error ? e.message : "Indexing failed. Try again.";
         setIndexError(msg);
         clearIndexingProgress(routeOwner, routeRepo);
-        toast.error(msg);
       } finally {
         setIndexing(false);
         if (force) {
@@ -702,6 +704,12 @@ export function RepoRagChat({
   const chatReady = Boolean(effectiveIndexedSha) && !manualReindexing;
 
   useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, [routeOwner, routeRepo]);
+
+  useEffect(() => {
     if (!chatReady) {
       queueMicrotask(() => {
         setMentionEntries([]);
@@ -715,12 +723,21 @@ export function RepoRagChat({
           `/api/repos/${encodeURIComponent(routeOwner)}/${encodeURIComponent(routeRepo)}/indexed-paths`,
           { signal: ac.signal },
         );
-        if (!res.ok) return;
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error ?? "Failed to load indexed paths");
+        }
         const body = (await res.json()) as { entries?: MentionPathEntry[] };
         if (!Array.isArray(body.entries)) return;
         setMentionEntries(body.entries);
-      } catch {
-        // keep chat usable when mention list cannot be loaded
+      } catch (error) {
+        // Keep chat usable if mention list cannot be loaded, but still surface a
+        // friendly message in the history panel so this failure isn't silent.
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to load indexed paths";
+        setChatHistoryError(message);
       }
     })();
     return () => ac.abort();
@@ -736,23 +753,49 @@ export function RepoRagChat({
   const loadChats = useCallback(async () => {
     if (!chatReady) return;
     setChatHistoryLoading(true);
+    setChatHistoryError(null);
     try {
       const res = await fetch(chatsUrl);
-      if (!res.ok) return;
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "Failed to load chats");
+      }
       const body = (await res.json()) as { chats?: ChatSummary[] };
       const next = Array.isArray(body.chats) ? body.chats : [];
       setChats(next);
       if (!activeChatId && !newChatDraftMode && next.length > 0) {
         setActiveChatId(next[0]!.id);
       }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to load chats";
+      setChatHistoryError(message);
     } finally {
       setChatHistoryLoading(false);
     }
   }, [activeChatId, chatReady, chatsUrl, newChatDraftMode]);
 
+  const refreshChatsListOnly = useCallback(async () => {
+    if (!chatReady) return;
+    try {
+      const res = await fetch(chatsUrl);
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "Failed to refresh chats");
+      }
+      const body = (await res.json()) as { chats?: ChatSummary[] };
+      const next = Array.isArray(body.chats) ? body.chats : [];
+      setChats(next);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to refresh chats";
+      setChatHistoryError(message);
+    }
+  }, [chatReady, chatsUrl]);
+
   const loadChatMessages = useCallback(
     async (chatId: string) => {
       setChatLoading(true);
+      setChatHistoryError(null);
       try {
         const res = await fetch(`${chatsUrl}/${encodeURIComponent(chatId)}`);
         if (!res.ok) {
@@ -781,7 +824,7 @@ export function RepoRagChat({
         setChatError(undefined);
       } catch (e) {
         const message = e instanceof Error ? e.message : "Failed to load chat";
-        toast.error(message);
+        setChatHistoryError(message);
       } finally {
         setChatLoading(false);
       }
@@ -791,6 +834,7 @@ export function RepoRagChat({
 
   const deleteChat = useCallback(
     async (chatId: string) => {
+      setChatHistoryError(null);
       const res = await fetch(`${chatsUrl}/${encodeURIComponent(chatId)}`, {
         method: "DELETE",
       });
@@ -829,7 +873,7 @@ export function RepoRagChat({
     if (resumePollOnly) {
       const started = Date.now();
       const id = setInterval(() => {
-        router.refresh();
+        refresh();
         if (Date.now() - started >= RESUME_POLL_MAX_MS) {
           clearInterval(id);
           setResumePollOnly(false);
@@ -845,14 +889,11 @@ export function RepoRagChat({
     queueMicrotask(() => {
       void runIndexStream();
     });
-    return () => {
-      abortRef.current?.abort();
-    };
   }, [
     effectiveIndexedSha,
     manualReindexing,
     resumePollOnly,
-    router,
+    refresh,
     runIndexStream,
     indexError,
     indexing,
@@ -867,7 +908,7 @@ export function RepoRagChat({
 
     const started = Date.now();
     const id = setInterval(() => {
-      router.refresh();
+      refresh();
       if (Date.now() - started > STUCK_REFRESH_MAX_MS) {
         clearInterval(id);
       }
@@ -880,7 +921,7 @@ export function RepoRagChat({
     indexPercent,
     effectiveIndexedSha,
     manualReindexing,
-    router,
+    refresh,
     burstRefresh,
     indexError,
   ]);
@@ -952,7 +993,7 @@ export function RepoRagChat({
         if (createdChatId && !currentChatId) {
           setActiveChatId(createdChatId);
           setNewChatDraftMode(false);
-          void loadChats();
+          void refreshChatsListOnly();
         }
 
         setStatus("streaming");
@@ -1060,7 +1101,7 @@ export function RepoRagChat({
         }
 
         setStatus("ready");
-        void loadChats();
+        void refreshChatsListOnly();
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") {
           setMessages((prev) =>
@@ -1098,9 +1139,9 @@ export function RepoRagChat({
     [
       activeChatId,
       effectiveIndexedSha,
-      loadChats,
       manualReindexing,
       ragUrl,
+      refreshChatsListOnly,
       routeOwner,
       routeRepo,
     ],
@@ -1110,11 +1151,11 @@ export function RepoRagChat({
     indexError != null
       ? "Indexing failed."
       : resumePollOnly && !indexing
-        ? "Index still running (from before you refreshed). Waiting for the server — usually under a minute for large repos."
+        ? "Index still running (from before you refreshed). Waiting for the server, usually under a minute for large repos."
         : indexing || indexPercent < 100
           ? "Indexing repository for grounded answers…"
           : indexPercent >= 100
-            ? "Almost ready — syncing this page with your project. If it stalls, check the error below or retry."
+            ? "Almost ready: syncing this page with your project. If it stalls, check the error below or retry."
             : "Preparing…";
 
   return (
@@ -1138,7 +1179,7 @@ export function RepoRagChat({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 shrink-0"
+                  className="size-7 shrink-0"
                   disabled={!chatReady || chatLoading}
                   onClick={() => {
                     setNewChatDraftMode(true);
@@ -1162,7 +1203,7 @@ export function RepoRagChat({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 shrink-0"
+                  className="size-7 shrink-0"
                   disabled={!chatReady}
                   onClick={() => setChatHistoryOpen((v) => !v)}
                   aria-label="Chat history"
@@ -1180,7 +1221,7 @@ export function RepoRagChat({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 shrink-0"
+                  className="size-7 shrink-0"
                   disabled={indexing}
                   onClick={() => {
                     void runIndexStream({ force: true });
@@ -1206,9 +1247,17 @@ export function RepoRagChat({
         <div className="shrink-0 border-border border-b bg-background px-2 py-1.5">
           <div className="max-h-56 overflow-y-auto scrollbar-hide">
             {chatHistoryLoading ? (
-              <p className="px-2 py-1 text-[11px] text-muted-foreground">
-                Loading chats...
-              </p>
+              <div className="space-y-1 px-1 py-1">
+                {Array.from({ length: 4 }).map((_, idx) => (
+                  <div
+                    key={`chat-history-skeleton-${idx}`}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5"
+                  >
+                    <Skeleton className="h-3.5 w-28" />
+                    <Skeleton className="ml-auto h-5 w-5 rounded-sm" />
+                  </div>
+                ))}
+              </div>
             ) : chats.length === 0 ? (
               <p className="px-2 py-1 text-[11px] text-muted-foreground">
                 No saved chats yet.
@@ -1251,7 +1300,7 @@ export function RepoRagChat({
                         void deleteChat(chat.id).catch((e) => {
                           const message =
                             e instanceof Error ? e.message : "Delete failed";
-                          toast.error(message);
+                          setChatHistoryError(message);
                         });
                       }}
                     >
@@ -1261,13 +1310,18 @@ export function RepoRagChat({
                 ))}
               </div>
             )}
+            {chatHistoryError ? (
+              <p className="px-2 py-1 text-[11px] text-destructive">
+                {chatHistoryError}
+              </p>
+            ) : null}
           </div>
         </div>
       ) : null}
 
       {!chatReady ? (
         <>
-          <div className="flex min-h-0 flex-1 flex-col justify-center gap-3 overflow-y-auto px-4 py-4">
+          <div className="flex min-h-0 flex-1 flex-col justify-center gap-3 overflow-y-auto p-4">
             <p className="text-[12px] text-muted-foreground leading-relaxed">
               {indexingStatusLine}
             </p>
@@ -1309,7 +1363,7 @@ export function RepoRagChat({
             ) : null}
           </div>
 
-          <div className="shrink-0 border-border border-t px-3 py-3">
+          <div className="shrink-0 border-border border-t p-3">
             <InputBar
               onSend={() => {}}
               onStop={() => {}}

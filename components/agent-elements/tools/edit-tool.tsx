@@ -13,6 +13,31 @@ import { ToolApprovalFooter, type ToolApproval } from "./tool-approval-footer";
 import type { AgentToolPart } from "../types";
 import { toolArgsMerged } from "../utils/format-tool";
 
+const EDIT_DIFF_DARK_CSS_VARS = {
+  "--diffs-bg": "#030712",
+  "--diffs-bg-buffer-override": "#030712",
+  "--diffs-bg-context-override": "#030712",
+  "--diffs-bg-hover-override": "#0a0a0a",
+  "--diffs-bg-separator-override": "#0f0f0f",
+} as React.CSSProperties;
+
+const EDIT_DIFF_DARK_UNSAFE_CSS = `
+[data-diff],
+[data-file],
+[data-diffs-header],
+[data-error-wrapper],
+[data-virtualizer-buffer] {
+  --diffs-bg: #030712;
+  --diffs-bg-buffer-override: #030712;
+  --diffs-bg-context-override: #030712;
+  --diffs-bg-hover-override: #0a0a0a;
+  --diffs-bg-separator-override: #0f0f0f;
+}
+`;
+
+const EDIT_DIFF_CLASS_NAME =
+  "an-edit-diff dark:bg-gray-950 dark:[--diffs-bg:#030712] dark:[--diffs-bg-buffer-override:#030712] dark:[--diffs-bg-context-override:#030712] dark:[--diffs-bg-hover-override:#0a0a0a] dark:[--diffs-bg-separator-override:#0f0f0f]";
+
 export type EditToolDiffCardProps = {
   step: Extract<TimelineStep, { type: "tool-call" }>;
   state: StepState;
@@ -80,14 +105,18 @@ export function EditToolDiffCard({
         ? input.new_string
         : undefined;
 
-    const fallbackOld = step.diffLines
-      ?.filter((line) => line.type !== "add")
-      .map((line) => line.content)
-      .join("\n");
-    const fallbackNew = step.diffLines
-      ?.filter((line) => line.type !== "remove")
-      .map((line) => line.content)
-      .join("\n");
+    let fallbackOld = "";
+    let fallbackNew = "";
+    if (step.diffLines) {
+      const oldParts: string[] = [];
+      const newParts: string[] = [];
+      for (const line of step.diffLines) {
+        if (line.type !== "add") oldParts.push(line.content);
+        if (line.type !== "remove") newParts.push(line.content);
+      }
+      fallbackOld = oldParts.join("\n");
+      fallbackNew = newParts.join("\n");
+    }
 
     const oldContents = oldFromInput ?? oldFromOutput ?? fallbackOld ?? "";
     const newContents = newFromInput ?? newFromOutput ?? fallbackNew ?? "";
@@ -106,49 +135,20 @@ export function EditToolDiffCard({
     return { oldFile, newFile };
   }, [fileName, input, output, step.diffLines]);
 
-  const diffCssVars = React.useMemo(
-    () =>
-      themeType === "dark"
-        ? ({
-            "--diffs-bg": "#000",
-            "--diffs-bg-buffer-override": "#000",
-            "--diffs-bg-context-override": "#000",
-            "--diffs-bg-hover-override": "#0a0a0a",
-            "--diffs-bg-separator-override": "#0f0f0f",
-          } as React.CSSProperties)
-        : undefined,
-    [themeType],
-  );
+  const diffCssVars =
+    themeType === "dark" ? EDIT_DIFF_DARK_CSS_VARS : undefined;
 
-  const diffUnsafeCss = React.useMemo(
-    () =>
-      themeType === "dark"
-        ? `
-[data-diff],
-[data-file],
-[data-diffs-header],
-[data-error-wrapper],
-[data-virtualizer-buffer] {
-  --diffs-bg: #000;
-  --diffs-bg-buffer-override: #000;
-  --diffs-bg-context-override: #000;
-  --diffs-bg-hover-override: #0a0a0a;
-  --diffs-bg-separator-override: #0f0f0f;
-}
-`
-        : undefined,
-    [themeType],
-  );
+  const diffUnsafeCss =
+    themeType === "dark" ? EDIT_DIFF_DARK_UNSAFE_CSS : undefined;
 
-  const diffClassName =
-    "an-edit-diff dark:bg-black dark:[--diffs-bg:#000] dark:[--diffs-bg-buffer-override:#000] dark:[--diffs-bg-context-override:#000] dark:[--diffs-bg-hover-override:#0a0a0a] dark:[--diffs-bg-separator-override:#0f0f0f]";
+  const diffClassName = EDIT_DIFF_CLASS_NAME;
 
   return (
-    <div className="an-edit-tool-card rounded-an-tool-border-radius border border-an-tool-border-color bg-an-tool-background dark:bg-black overflow-hidden">
+    <div className="an-edit-tool-card rounded-an-tool-border-radius border border-an-tool-border-color bg-an-tool-background dark:bg-gray-950 overflow-hidden">
       <div
         className={
           // Explicit bg-an-tool-background so the header keeps its light-grey
-          // contrast in dark mode — the wrapper forces `dark:bg-black` for the
+          // contrast in dark mode — the wrapper forces `dark:bg-gray-950` for the
           // diff body, which would otherwise bleed into the header.
           "flex items-center justify-between px-2.5 py-0 h-7 bg-an-tool-background " +
           (isPending && !diffFiles
@@ -158,11 +158,11 @@ export function EditToolDiffCard({
       >
         <div className="flex items-center gap-1.5 min-w-0">
           {hasFileName && (
-            <FileExtIcon filename={fileName} className="w-3 h-3 shrink-0" />
+            <FileExtIcon filename={fileName} className="size-3 shrink-0" />
           )}
           {isPending && !diffFiles ? (
             <TextShimmer as="span" duration={1.2} className="text-xs">
-              Generating...
+              Generating…
             </TextShimmer>
           ) : isPending ? (
             <TextShimmer as="span" duration={1.2} className="text-xs">
@@ -176,9 +176,9 @@ export function EditToolDiffCard({
         </div>
         {step.diffStats && !isPending && (
           <span className="text-[11px] font-mono text-an-tool-color-muted inline-flex gap-2">
-            {step.diffStats.split(" ").map((token) => (
+            {step.diffStats.split(" ").map((token, ti) => (
               <span
-                key={token}
+                key={`${token}-${ti}`}
                 className={
                   token.startsWith("+")
                     ? "text-an-diff-added-text"

@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -12,11 +13,9 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 
-import { RepoFileExplorer } from "@/components/repo/repo-file-explorer";
 import { RepoOverviewContent } from "@/components/repo/repo-overview";
-import { RepoReadme } from "@/components/repo/repo-readme";
-import { RepoRagChat } from "@/components/repo/repo-rag-chat";
 import { Sidebar, SidebarContent } from "@/components/ui/sidebar";
+import { Skeleton } from "@/components/ui/skeleton";
 
 import type { RepoRootEntry } from "@/lib/github/fetch-repo-root-contents";
 import type { RepoTechStackSummary } from "@/lib/github/repo-tech-stack";
@@ -24,6 +23,48 @@ import type { RepoTechStackSummary } from "@/lib/github/repo-tech-stack";
 import { cn } from "@/lib/utils";
 
 const REPO_STAT_LOCALE = "en-US";
+
+const RepoFileExplorer = dynamic(
+  () =>
+    import("@/components/repo/repo-file-explorer").then(
+      (m) => m.RepoFileExplorer,
+    ),
+  {
+    loading: () => (
+      <div className="p-3.5">
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="mt-2 h-56 w-full" />
+      </div>
+    ),
+  },
+);
+
+const RepoReadme = dynamic(
+  () => import("@/components/repo/repo-readme").then((m) => m.RepoReadme),
+  {
+    loading: () => (
+      <div className="space-y-3 px-1 py-1">
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-11/12" />
+        <Skeleton className="h-4 w-10/12" />
+      </div>
+    ),
+  },
+);
+
+const RepoRagChat = dynamic(
+  () => import("@/components/repo/repo-rag-chat").then((m) => m.RepoRagChat),
+  {
+    loading: () => (
+      <div className="space-y-2 p-3">
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    ),
+  },
+);
 
 function RepoDetailTabButton({
   label,
@@ -143,9 +184,9 @@ export function RepoDetailClient(props: RepoDetailClientProps) {
 
   const stats = useMemo(() => {
     const st =
-      props.stars != null ? props.stars.toLocaleString(REPO_STAT_LOCALE) : "—";
+      props.stars != null ? props.stars.toLocaleString(REPO_STAT_LOCALE) : "-";
     const fk =
-      props.forks != null ? props.forks.toLocaleString(REPO_STAT_LOCALE) : "—";
+      props.forks != null ? props.forks.toLocaleString(REPO_STAT_LOCALE) : "-";
     return { stars: st, forks: fk };
   }, [props.forks, props.stars]);
 
@@ -239,7 +280,7 @@ export function RepoDetailClient(props: RepoDetailClientProps) {
                   />
                   <span className="sr-only">Default branch</span>
                   <span className="font-mono font-medium text-[11px] text-foreground opacity-92">
-                    {props.defaultBranch ?? "—"}
+                    {props.defaultBranch ?? "-"}
                   </span>
                 </div>
                 <span aria-hidden className="opacity-35">
@@ -249,7 +290,7 @@ export function RepoDetailClient(props: RepoDetailClientProps) {
                   <span className="text-muted-foreground">HEAD</span>
                   <span className="sr-only">HEAD commit</span>
                   <span className="text-foreground/90">
-                    {props.shaShort ?? "—"}
+                    {props.shaShort ?? "-"}
                   </span>
                 </div>
               </div>
@@ -300,7 +341,7 @@ export function RepoDetailClient(props: RepoDetailClientProps) {
               <div className="w-full overflow-hidden rounded-lg border border-border/55 bg-background">
                 {!refBranch ? (
                   <p className="px-3 py-4 text-muted-foreground text-[12px] leading-relaxed">
-                    Default branch unavailable — revisit after GitHub metadata
+                    Default branch unavailable: revisit after GitHub metadata
                     loads or set{" "}
                     <code className="font-mono text-foreground">
                       GITHUB_TOKEN
@@ -316,13 +357,13 @@ export function RepoDetailClient(props: RepoDetailClientProps) {
                         className="size-3"
                       />
                       <span className="font-mono text-foreground text-[11.25px]">
-                        {props.defaultBranch ?? "—"}
+                        {props.defaultBranch ?? "-"}
                       </span>
                       <span aria-hidden className="opacity-45">
                         ·
                       </span>
                       <span className="font-mono text-[11px] opacity-80">
-                        {props.shaShort ?? "—"}
+                        {props.shaShort ?? "-"}
                       </span>
                     </div>
                     <RepoFileExplorer

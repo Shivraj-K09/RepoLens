@@ -1,5 +1,9 @@
 import { createOctokit } from "@/lib/github/octokit";
 
+const README_CACHE_TTL_MS = 3 * 60 * 1000;
+const readmeCache = new Map<string, { value: string | null; expiresAt: number }>();
+const readmeInflight = new Map<string, Promise<string | null>>();
+
 function isHttpNotFound(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -31,6 +35,16 @@ export async function fetchGithubRepoReadmeMarkdown(
   repo: string,
   ref?: string | null,
 ): Promise<string | null> {
+  const key = `${owner.toLowerCase()}/${repo.toLowerCase()}@${ref?.trim()?.toLowerCase() ?? "default"}`;
+  const now = Date.now();
+  const cached = readmeCache.get(key);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+  const inflight = readmeInflight.get(key);
+  if (inflight) return inflight;
+
+  const task = (async () => {
   const octokit = createOctokit();
   const trimmedRef = ref?.trim();
 
@@ -52,5 +66,15 @@ export async function fetchGithubRepoReadmeMarkdown(
     }
     console.warn("[fetchGithubRepoReadmeMarkdown]", err);
     return null;
+  }
+  })();
+
+  readmeInflight.set(key, task);
+  try {
+    const value = await task;
+    readmeCache.set(key, { value, expiresAt: Date.now() + README_CACHE_TTL_MS });
+    return value;
+  } finally {
+    readmeInflight.delete(key);
   }
 }

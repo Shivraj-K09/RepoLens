@@ -62,7 +62,7 @@ export function sortRepoExplorerEntries<
 >(rows: readonly E[]): E[] {
   const rank = (k: RepoEntryLike["kind"]) =>
     k === "dir" ? 0 : k === "submodule" ? 1 : 2;
-  return [...rows].sort((a, b) => {
+  return [...rows].toSorted((a, b) => {
     const dr = rank(a.kind) - rank(b.kind);
     if (dr !== 0) return dr;
     return a.name.localeCompare(b.name, undefined, {

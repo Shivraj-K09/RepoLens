@@ -6,6 +6,10 @@ import {
   githubReadRepoFileUtf8,
   normalizeRepoContentPath,
 } from "@/lib/github/repo-path";
+import {
+  checkRateLimit,
+  rateLimitExceededResponse,
+} from "@/lib/security/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 import { requireSavedRepoAccess } from "@/lib/supabase/require-repo-for-user";
 
@@ -30,6 +34,20 @@ export async function GET(request: Request, { params }: RouteParams) {
 
   if (authError || !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const githubContentsRateLimit = checkRateLimit({
+    request,
+    namespace: "repos:github-contents",
+    userId: user.id,
+    max: 240,
+    windowMs: 60 * 1000,
+  });
+  if (!githubContentsRateLimit.allowed) {
+    return rateLimitExceededResponse(
+      githubContentsRateLimit,
+      "Too many repository content requests. Please retry shortly.",
+    );
   }
 
   const saved = await requireSavedRepoAccess(user.id, ownerNorm, repoNorm);

@@ -30,6 +30,19 @@ export type DetectedChanges = {
   items: TodoChange[];
 };
 
+function todoRowKey(todo: TodoItem, index: number): string {
+  return `${index}:${todo.status}:${quickTodoHash(todo.content)}`;
+}
+
+function quickTodoHash(content: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < content.length; i += 1) {
+    h ^= content.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+
 function detectChanges(
   oldTodos: TodoItem[],
   newTodos: TodoItem[],
@@ -71,8 +84,8 @@ const TodoStatusIcon = ({
 }) => {
   if (isPending && status === "in_progress") {
     return (
-      <div className="w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 border border-an-foreground-muted/60">
-        <IconArrowRight className="w-2 h-2 text-an-foreground-muted/70" />
+      <div className="size-3.5 rounded-full flex items-center justify-center shrink-0 border border-an-foreground-muted/60">
+        <IconArrowRight className="size-2 text-an-foreground-muted/70" />
       </div>
     );
   }
@@ -80,19 +93,19 @@ const TodoStatusIcon = ({
   switch (status) {
     case "completed":
       return (
-        <div className="w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 border border-an-foreground-muted/40">
-          <CheckIcon className="w-2 h-2 text-an-foreground-muted/70" />
+        <div className="size-3.5 rounded-full flex items-center justify-center shrink-0 border border-an-foreground-muted/40">
+          <CheckIcon className="size-2 text-an-foreground-muted/70" />
         </div>
       );
     case "in_progress":
       return (
-        <div className="w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 border border-an-foreground-muted/60">
-          <IconArrowRight className="w-2 h-2 text-an-foreground-muted/70" />
+        <div className="size-3.5 rounded-full flex items-center justify-center shrink-0 border border-an-foreground-muted/60">
+          <IconArrowRight className="size-2 text-an-foreground-muted/70" />
         </div>
       );
     default:
       return (
-        <div className="w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 border border-an-foreground-muted/60" />
+        <div className="size-3.5 rounded-full flex items-center justify-center shrink-0 border border-an-foreground-muted/60" />
       );
   }
 };
@@ -161,7 +174,7 @@ export const TodoTool = memo(function TodoTool({
             duration={1.2}
             className="inline-flex items-center text-sm leading-none h-4 m-0"
           >
-            {isCreation ? "Creating to-do list..." : "Updating to-dos..."}
+            {isCreation ? "Creating to-do list…" : "Updating to-dos…"}
           </TextShimmer>
         </div>
       </div>
@@ -173,7 +186,11 @@ export const TodoTool = memo(function TodoTool({
     return (
       <div className="space-y-2 text-sm leading-relaxed text-an-foreground/80">
         {newTodos.map((todo, idx) => (
-          <TodoListItem key={idx} todo={todo} isPending={isPending} />
+          <TodoListItem
+            key={todoRowKey(todo, idx)}
+            todo={todo}
+            isPending={isPending}
+          />
         ))}
       </div>
     );
@@ -184,7 +201,11 @@ export const TodoTool = memo(function TodoTool({
     return (
       <div className="space-y-2 text-sm leading-relaxed text-an-foreground/80">
         {newTodos.map((todo, idx) => (
-          <TodoListItem key={idx} todo={todo} isPending={isPending} />
+          <TodoListItem
+            key={todoRowKey(todo, idx)}
+            todo={todo}
+            isPending={isPending}
+          />
         ))}
       </div>
     );
@@ -194,7 +215,11 @@ export const TodoTool = memo(function TodoTool({
   return (
     <div className="space-y-2 text-sm leading-relaxed text-an-foreground/80">
       {displayTodos.map((todo, idx) => (
-        <TodoListItem key={idx} todo={todo} isPending={isPending} />
+        <TodoListItem
+          key={todoRowKey(todo, idx)}
+          todo={todo}
+          isPending={isPending}
+        />
       ))}
     </div>
   );

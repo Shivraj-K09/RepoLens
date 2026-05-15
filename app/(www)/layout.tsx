@@ -1,17 +1,7 @@
-import {
-  LandingShell,
-  type LandingAuthorLinks,
-} from "@/components/landing/landing-shell";
+import { LandingShell } from "@/components/landing/landing-shell";
 import { landingAuthFromUser } from "@/lib/auth/landing-auth";
 import { fetchRecentRepoVisitSidebar } from "@/lib/supabase/repo-visit-history";
 import { createClient } from "@/lib/supabase/server";
-
-function authorLinks(): LandingAuthorLinks {
-  return {
-    github: process.env.NEXT_PUBLIC_AUTHOR_GITHUB_URL?.trim() ?? "",
-    linkedIn: process.env.NEXT_PUBLIC_AUTHOR_LINKEDIN_URL?.trim() ?? "",
-  };
-}
 
 export default async function WwwLayout({
   children,
@@ -28,11 +18,7 @@ export default async function WwwLayout({
     user != null ? await fetchRecentRepoVisitSidebar(supabase, user.id) : [];
 
   return (
-    <LandingShell
-      auth={auth}
-      author={authorLinks()}
-      repoVisitHistory={repoVisitHistory}
-    >
+    <LandingShell auth={auth} repoVisitHistory={repoVisitHistory}>
       {children}
     </LandingShell>
   );

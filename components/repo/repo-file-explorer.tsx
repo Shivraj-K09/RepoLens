@@ -422,11 +422,11 @@ export function RepoFileExplorer({
               Loading…
             </div>
           ) : listError ? (
-            <p className="wrap-break-word px-2 py-2 text-muted-foreground text-[12px]">
+            <p className="wrap-break-word p-2 text-muted-foreground text-[12px]">
               {listError}
             </p>
           ) : entries.length === 0 ? (
-            <p className="px-2 py-2 text-muted-foreground text-[12px]">Empty folder.</p>
+            <p className="p-2 text-muted-foreground text-[12px]">Empty folder.</p>
           ) : (
             <div
               className="relative w-full pt-px"
@@ -532,7 +532,7 @@ export function RepoFileExplorer({
         >
           {tabs.length === 0 ? (
             <span className="truncate px-2 py-1.25 text-muted-foreground text-[11.5px]">
-              No files open — pick a file. Shift+Enter or ⌘/Ctrl-click adds a tab in the background.
+              No files open: pick a file. Shift+Enter or ⌘/Ctrl-click adds a tab in the background.
             </span>
           ) : (
             tabs.map((tab) => {

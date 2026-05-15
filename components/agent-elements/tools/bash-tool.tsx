@@ -13,8 +13,10 @@ import { toolArgsMerged } from "../utils/format-tool";
 function extractCommandSummary(cmd: string): string {
   return cmd
     .split("|")
-    .map((s) => s.trim().split(/\s+/)[0] ?? "")
-    .filter(Boolean)
+    .flatMap((s) => {
+      const first = s.trim().split(/\s+/)[0] ?? "";
+      return first ? [first] : [];
+    })
     .slice(0, 4)
     .join(", ");
 }
@@ -57,7 +59,7 @@ export function BashToolTerminalCard({
         </div>
         {isPending && (
           <svg
-            className="w-3 h-3 text-muted-foreground animate-spin shrink-0"
+            className="size-3 text-muted-foreground animate-spin shrink-0"
             viewBox="0 0 16 16"
             fill="none"
           >
