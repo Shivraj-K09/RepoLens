@@ -156,21 +156,24 @@ export async function inferLikelyPathsFromTree(params: {
     if (anyMatch) candidates.push(path);
   }
 
-  const scored = candidates
-    .map((path) => {
-      const p = path.toLowerCase();
-      let score = scorePathWithHints(path, [...searchTerms]);
-      if (p.startsWith("docs/")) score += 45;
-      if (/\.(md|mdx)$/.test(p)) score += 25;
-      if (p.includes("installation")) score += 120;
-      if (p.includes("getting-started")) score += 50;
-      if (p.includes("01-installation")) score += 120;
-      if (p.includes("/index.mdx")) score -= 25;
-      if (tree.files.includes(path)) score += 12;
-      return { path, score };
-    })
-    .filter((row) => row.score > 0)
-    .sort((a, b) => {
+  const treeFileSet = new Set(tree.files);
+  const searchTermsArr = [...searchTerms];
+  const staged: { path: string; score: number }[] = [];
+  for (const path of candidates) {
+    const p = path.toLowerCase();
+    let score = scorePathWithHints(path, searchTermsArr);
+    if (p.startsWith("docs/")) score += 45;
+    if (/\.(md|mdx)$/.test(p)) score += 25;
+    if (p.includes("installation")) score += 120;
+    if (p.includes("getting-started")) score += 50;
+    if (p.includes("01-installation")) score += 120;
+    if (p.includes("/index.mdx")) score -= 25;
+    if (treeFileSet.has(path)) score += 12;
+    if (score > 0) staged.push({ path, score });
+  }
+
+  const scored = staged
+    .toSorted((a, b) => {
       if (a.score !== b.score) return b.score - a.score;
       return a.path.localeCompare(b.path);
     })

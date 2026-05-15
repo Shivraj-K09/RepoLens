@@ -255,7 +255,9 @@ function MessageToolbar({
       onMouseDown={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      {timestamp && <span>{timestamp}</span>}
+      {timestamp ? (
+        <span suppressHydrationWarning>{timestamp}</span>
+      ) : null}
       {text && <CopyButton text={text} onCopied={onCopied} />}
     </div>
   );
@@ -702,7 +704,7 @@ function AssistantParts({
     for (const part of parts) {
       if (!isV5ToolPart(part)) continue;
       if (part.type === "tool-TaskOutput") continue;
-      if (!part.toolCallId || !part.toolCallId.includes(":")) continue;
+      if (!part.toolCallId || part.toolCallId.indexOf(":") === -1) continue;
       const parentId = part.toolCallId.split(":")[0];
       if (!taskPartIds.has(parentId)) continue;
       if (!nestedToolsMap.has(parentId)) {

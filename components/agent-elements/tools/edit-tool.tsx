@@ -36,7 +36,7 @@ const EDIT_DIFF_DARK_UNSAFE_CSS = `
 `;
 
 const EDIT_DIFF_CLASS_NAME =
-  "an-edit-diff dark:bg-gray-950 dark:[--diffs-bg:#030712] dark:[--diffs-bg-buffer-override:#030712] dark:[--diffs-bg-context-override:#030712] dark:[--diffs-bg-hover-override:#0a0a0a] dark:[--diffs-bg-separator-override:#0f0f0f]";
+  "an-edit-diff dark:bg-zinc-950 dark:[--diffs-bg:#030712] dark:[--diffs-bg-buffer-override:#030712] dark:[--diffs-bg-context-override:#030712] dark:[--diffs-bg-hover-override:#0a0a0a] dark:[--diffs-bg-separator-override:#0f0f0f]";
 
 export type EditToolDiffCardProps = {
   step: Extract<TimelineStep, { type: "tool-call" }>;
@@ -144,11 +144,11 @@ export function EditToolDiffCard({
   const diffClassName = EDIT_DIFF_CLASS_NAME;
 
   return (
-    <div className="an-edit-tool-card rounded-an-tool-border-radius border border-an-tool-border-color bg-an-tool-background dark:bg-gray-950 overflow-hidden">
+    <div className="an-edit-tool-card rounded-an-tool-border-radius border border-an-tool-border-color bg-an-tool-background dark:bg-zinc-950 overflow-hidden">
       <div
         className={
           // Explicit bg-an-tool-background so the header keeps its light-grey
-          // contrast in dark mode — the wrapper forces `dark:bg-gray-950` for the
+          // contrast in dark mode — the wrapper forces `dark:bg-zinc-950` for the
           // diff body, which would otherwise bleed into the header.
           "flex items-center justify-between px-2.5 py-0 h-7 bg-an-tool-background " +
           (isPending && !diffFiles

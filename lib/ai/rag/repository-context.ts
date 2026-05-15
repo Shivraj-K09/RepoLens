@@ -94,6 +94,7 @@ export async function buildRepositorySignalContext(params: {
   const rootFiles = tree.files
     .filter((path) => !path.includes("/"))
     .sort((a, b) => a.localeCompare(b));
+  const rootFileSet = new Set(rootFiles);
   const rootMarkers = [
     "package.json",
     "pnpm-lock.yaml",
@@ -107,7 +108,7 @@ export async function buildRepositorySignalContext(params: {
     "go.mod",
     "Cargo.toml",
     "Dockerfile",
-  ].filter((name) => rootFiles.includes(name));
+  ].filter((name) => rootFileSet.has(name));
   if (rootMarkers.length > 0) {
     lines.push(`- root tooling markers: ${rootMarkers.join(", ")}`);
   }
@@ -119,7 +120,7 @@ export async function buildRepositorySignalContext(params: {
     firstSegmentCounts.set(segment, (firstSegmentCounts.get(segment) ?? 0) + 1);
   }
   const topAreas = [...firstSegmentCounts.entries()]
-    .sort((a, b) => b[1] - a[1])
+    .toSorted((a, b) => b[1] - a[1])
     .slice(0, 8)
     .map(([segment, count]) => `${segment} (${count} files)`);
   if (topAreas.length > 0) {
@@ -133,7 +134,7 @@ export async function buildRepositorySignalContext(params: {
     lines.push(`- CI/workflow files: ${workflowFiles.join(", ")}`);
   }
 
-  if (rootFiles.includes("package.json")) {
+  if (rootFileSet.has("package.json")) {
     const pkg = await githubReadRepoFileUtf8(
       params.owner,
       params.repo,
@@ -170,14 +171,17 @@ export async function buildMentionedPathKindContext(params: {
   });
   if (!tree) return "";
 
+  const fileSet = new Set(tree.files);
+  const dirSet = new Set(tree.dirs);
+
   const lines: string[] = [];
   for (const rawHint of params.hints.slice(0, 6)) {
     const normalized = normalizeRepoContentPath(rawHint);
     if (!normalized.ok || !normalized.path) continue;
     const path = normalized.path;
-    const isFile = tree.files.includes(path);
+    const isFile = fileSet.has(path);
     const isDir =
-      tree.dirs.includes(path) ||
+      dirSet.has(path) ||
       tree.files.some((p) => p.startsWith(`${path}/`)) ||
       tree.dirs.some((p) => p.startsWith(`${path}/`));
     if (isDir) {
@@ -230,8 +234,9 @@ export async function buildDirectPathContext(params: {
     }
 
     if (tree) {
+      const dirSetInner = new Set(tree.dirs);
       const dirExists =
-        tree.dirs.includes(path) ||
+        dirSetInner.has(path) ||
         tree.files.some((p) => p.startsWith(`${path}/`)) ||
         tree.dirs.some((p) => p.startsWith(`${path}/`));
       if (dirExists) {
@@ -253,24 +258,24 @@ export async function buildDirectPathContext(params: {
         }
 
         const topLevelEntries = [
-          ...[...topDirs].sort((a, b) => a.localeCompare(b)),
-          ...[...topFiles].sort((a, b) => a.localeCompare(b)),
+          ...[...topDirs].toSorted((a, b) => a.localeCompare(b)),
+          ...[...topFiles].toSorted((a, b) => a.localeCompare(b)),
         ].map((entry) => `- ${entry}`);
 
         const MAX_TREE_DEPTH = 3;
         const MAX_TREE_NODES = 240;
         const MAX_SAMPLE_FILES = 3;
 
-        const recursive = [...tree.dirs, ...tree.files]
-          .filter((p) => p.startsWith(prefix))
-          .map((p) => p.slice(prefix.length))
-          .filter((relative) => relative.length > 0)
-          .map((relative) => ({
-            relative,
-            depth: Math.max(0, relative.split("/").length - 1),
-          }))
-          .filter((row) => row.depth < MAX_TREE_DEPTH)
-          .slice(0, MAX_TREE_NODES);
+        const recursive: { relative: string; depth: number }[] = [];
+        walk: for (const p of [...tree.dirs, ...tree.files]) {
+          if (!p.startsWith(prefix)) continue;
+          const relative = p.slice(prefix.length);
+          if (relative.length === 0) continue;
+          const depth = Math.max(0, relative.split("/").length - 1);
+          if (depth >= MAX_TREE_DEPTH) continue;
+          recursive.push({ relative, depth });
+          if (recursive.length >= MAX_TREE_NODES) break walk;
+        }
 
         const treeLines = recursive.map(
           ({ relative, depth }) => `${"  ".repeat(depth)}- ${relative}`,
@@ -280,21 +285,24 @@ export async function buildDirectPathContext(params: {
           .filter((p) => p.startsWith(prefix))
           .slice(0, MAX_SAMPLE_FILES);
 
-        const sampleBlocks: string[] = [];
-        for (const filePath of sampleFilePaths) {
-          const fileSample = await githubReadRepoFileUtf8(
-            params.owner,
-            params.repo,
-            params.commitSha,
-            filePath,
-          );
-          if (!fileSample.ok) continue;
-          const text =
-            fileSample.text.length > 1_200
-              ? `${fileSample.text.slice(0, 1_200)}\n\n[truncated]`
-              : fileSample.text;
-          sampleBlocks.push(`#### Sample from ${filePath}\n${text}`);
-        }
+        const folderSampleBlocks = (
+          await Promise.all(
+            sampleFilePaths.map(async (filePath) => {
+              const fileSample = await githubReadRepoFileUtf8(
+                params.owner,
+                params.repo,
+                params.commitSha,
+                filePath,
+              );
+              if (!fileSample.ok) return "";
+              const text =
+                fileSample.text.length > 1_200
+                  ? `${fileSample.text.slice(0, 1_200)}\n\n[truncated]`
+                  : fileSample.text;
+              return `#### Sample from ${filePath}\n${text}`;
+            }),
+          )
+        ).filter(Boolean);
 
         blocks.push(
           `### Mentioned folder: ${path}\n` +
@@ -302,8 +310,8 @@ export async function buildDirectPathContext(params: {
             `Top-level entries (complete, uncapped):\n${topLevelEntries.join("\n") || "(empty)"}\n\n` +
             `Recursive contents (depth ${MAX_TREE_DEPTH}, capped):\n` +
             `${treeLines.join("\n") || "(empty)"}\n\n` +
-            (sampleBlocks.length > 0
-              ? `Representative file content:\n\n${sampleBlocks.join("\n\n")}`
+            (folderSampleBlocks.length > 0
+              ? `Representative file content:\n\n${folderSampleBlocks.join("\n\n")}`
               : "Representative file content: unavailable"),
         );
         continue;
@@ -376,21 +384,24 @@ export async function buildDirectPathContext(params: {
       }
     }
 
-    const sampleBlocks: string[] = [];
-    for (const filePath of sampleFilePaths) {
-      const fileSample = await githubReadRepoFileUtf8(
-        params.owner,
-        params.repo,
-        params.commitSha,
-        filePath,
-      );
-      if (!fileSample.ok) continue;
-      const text =
-        fileSample.text.length > 1_200
-          ? `${fileSample.text.slice(0, 1_200)}\n\n[truncated]`
-          : fileSample.text;
-      sampleBlocks.push(`#### Sample from ${filePath}\n${text}`);
-    }
+    const listedSampleBlocks = (
+      await Promise.all(
+        sampleFilePaths.map(async (filePath) => {
+          const fileSample = await githubReadRepoFileUtf8(
+            params.owner,
+            params.repo,
+            params.commitSha,
+            filePath,
+          );
+          if (!fileSample.ok) return "";
+          const text =
+            fileSample.text.length > 1_200
+              ? `${fileSample.text.slice(0, 1_200)}\n\n[truncated]`
+              : fileSample.text;
+          return `#### Sample from ${filePath}\n${text}`;
+        }),
+      )
+    ).filter(Boolean);
 
     blocks.push(
       `### Mentioned folder: ${path}\n` +
@@ -398,8 +409,8 @@ export async function buildDirectPathContext(params: {
         `Top-level entries (complete, uncapped):\n${topLevelEntries.join("\n") || "(empty)"}\n\n` +
         `Recursive contents (depth ${MAX_TREE_DEPTH}, capped):\n` +
         `${treeLines.join("\n") || "(empty)"}\n\n` +
-        (sampleBlocks.length > 0
-          ? `Representative file content:\n\n${sampleBlocks.join("\n\n")}`
+        (listedSampleBlocks.length > 0
+          ? `Representative file content:\n\n${listedSampleBlocks.join("\n\n")}`
           : "Representative file content: unavailable"),
     );
   }
@@ -424,13 +435,13 @@ export async function buildRepositoryTreeContext(params: {
   if (!tree) return "";
 
   const lines: string[] = [];
-  const nodes = [...tree.dirs, ...tree.files]
-    .map((path) => ({
-      path,
-      depth: Math.max(0, path.split("/").length - 1),
-    }))
-    .filter((row) => row.depth < maxDepth)
-    .slice(0, maxNodes);
+  const nodes: { path: string; depth: number }[] = [];
+  walk: for (const pathItem of [...tree.dirs, ...tree.files]) {
+    const depth = Math.max(0, pathItem.split("/").length - 1);
+    if (depth >= maxDepth) continue;
+    nodes.push({ path: pathItem, depth });
+    if (nodes.length >= maxNodes) break walk;
+  }
 
   for (const row of nodes) {
     const indent = "  ".repeat(Math.min(maxDepth, row.depth));
@@ -456,25 +467,26 @@ export async function buildWorkflowDocsContext(params: {
   });
   if (!tree) return "";
 
-  const candidates = [...tree.files]
-    .map((path) => {
-      const p = path.toLowerCase();
-      let score = 0;
-      if (p.includes("contributing")) score += 120;
-      if (
-        p.includes("pull_request_template") ||
-        p.includes("pull-request-template")
-      ) {
-        score += 115;
-      }
-      if (p.includes(".github/") && p.includes("pull")) score += 90;
-      if (p.includes("docs/") && p.includes("contribut")) score += 85;
-      if (p.endsWith("readme.md") || p.endsWith("readme.mdx")) score += 40;
-      if (p.includes("workflow") && p.includes(".github/workflows/")) score += 35;
-      return { path, score };
-    })
-    .filter((row) => row.score > 0)
-    .sort((a, b) => {
+  const staged: { path: string; score: number }[] = [];
+  for (const path of tree.files) {
+    const p = path.toLowerCase();
+    let score = 0;
+    if (p.includes("contributing")) score += 120;
+    if (
+      p.includes("pull_request_template") ||
+      p.includes("pull-request-template")
+    ) {
+      score += 115;
+    }
+    if (p.includes(".github/") && p.includes("pull")) score += 90;
+    if (p.includes("docs/") && p.includes("contribut")) score += 85;
+    if (p.endsWith("readme.md") || p.endsWith("readme.mdx")) score += 40;
+    if (p.includes("workflow") && p.includes(".github/workflows/")) score += 35;
+    if (score > 0) staged.push({ path, score });
+  }
+
+  const candidates = staged
+    .toSorted((a, b) => {
       if (a.score !== b.score) return b.score - a.score;
       return a.path.localeCompare(b.path);
     })
@@ -482,25 +494,28 @@ export async function buildWorkflowDocsContext(params: {
 
   if (candidates.length === 0) return "";
 
-  const fileBlocks: string[] = [];
-  for (const row of candidates) {
-    const file = await githubReadRepoFileUtf8(
-      params.owner,
-      params.repo,
-      params.commitSha,
-      row.path,
-    );
-    if (!file.ok) continue;
-    const text =
-      file.text.length > 1800
-        ? `${file.text.slice(0, 1800)}\n\n[truncated]`
-        : file.text;
-    const sanitizedText = text.replace(
-      /https?:\/\/[^\s)]+/gi,
-      "[external-url-omitted]",
-    );
-    fileBlocks.push(`### Workflow doc: ${row.path}\n${sanitizedText}`);
-  }
+  const fileBlocks = (
+    await Promise.all(
+      candidates.map(async (row) => {
+        const file = await githubReadRepoFileUtf8(
+          params.owner,
+          params.repo,
+          params.commitSha,
+          row.path,
+        );
+        if (!file.ok) return "";
+        const text =
+          file.text.length > 1800
+            ? `${file.text.slice(0, 1800)}\n\n[truncated]`
+            : file.text;
+        const sanitizedText = text.replace(
+          /https?:\/\/[^\s)]+/gi,
+          "[external-url-omitted]",
+        );
+        return `### Workflow doc: ${row.path}\n${sanitizedText}`;
+      }),
+    )
+  ).filter(Boolean);
   if (fileBlocks.length === 0) return "";
   return [
     "Repository-specific contribution/update workflow guidance:",
@@ -537,23 +552,35 @@ export async function buildInferredKeywordContext(params: {
 
   if (candidates.length === 0) return "";
 
-  const ranked = candidates.sort((a, b) => b.score - a.score).slice(0, 10);
+  const ranked = candidates
+    .toSorted((a, b) => {
+      if (a.score !== b.score) return b.score - a.score;
+      return a.path.localeCompare(b.path);
+    })
+    .slice(0, 10);
   const lines: string[] = [];
-  const sampleBlocks: string[] = [];
+  const samplePaths: string[] = [];
 
   for (const row of ranked) {
     if (row.kind === "dir") {
-      const children = tree.files
-        .filter((p) => p.startsWith(`${row.path}/`))
-        .map((p) => p.slice(row.path.length + 1))
-        .filter((p) => p.length > 0 && !p.includes("/"))
-        .slice(0, 10);
-      const childDirs = tree.dirs
-        .filter((p) => p.startsWith(`${row.path}/`))
-        .map((p) => p.slice(row.path.length + 1))
-        .filter((p) => p.length > 0 && !p.includes("/"))
-        .slice(0, 10);
-      const preview = [...childDirs, ...children].slice(0, 12);
+      const childNames: string[] = [];
+      const childDirNames: string[] = [];
+      const prefix = `${row.path}/`;
+      for (const p of tree.dirs) {
+        if (!p.startsWith(prefix)) continue;
+        const rel = p.slice(prefix.length);
+        if (!rel || rel.includes("/")) continue;
+        if (childDirNames.length >= 10) break;
+        childDirNames.push(rel);
+      }
+      for (const p of tree.files) {
+        if (!p.startsWith(prefix)) continue;
+        const rel = p.slice(prefix.length);
+        if (!rel || rel.includes("/")) continue;
+        if (childNames.length >= 10) break;
+        childNames.push(rel);
+      }
+      const preview = [...childDirNames, ...childNames].slice(0, 12);
       lines.push(
         `- ${row.path} (folder)${preview.length > 0 ? ` -> ${preview.join(", ")}` : ""}`,
       );
@@ -561,20 +588,29 @@ export async function buildInferredKeywordContext(params: {
     }
 
     lines.push(`- ${row.path}`);
-    if (sampleBlocks.length >= 3) continue;
-    const fileSample = await githubReadRepoFileUtf8(
-      params.owner,
-      params.repo,
-      params.commitSha,
-      row.path,
-    );
-    if (!fileSample.ok) continue;
-    const text =
-      fileSample.text.length > 1200
-        ? `${fileSample.text.slice(0, 1200)}\n\n[truncated]`
-        : fileSample.text;
-    sampleBlocks.push(`#### Sample from ${row.path}\n${text}`);
+    if (samplePaths.length < 3) {
+      samplePaths.push(row.path);
+    }
   }
+
+  const sampleBlocks = (
+    await Promise.all(
+      samplePaths.map(async (path) => {
+        const fileSample = await githubReadRepoFileUtf8(
+          params.owner,
+          params.repo,
+          params.commitSha,
+          path,
+        );
+        if (!fileSample.ok) return "";
+        const text =
+          fileSample.text.length > 1200
+            ? `${fileSample.text.slice(0, 1200)}\n\n[truncated]`
+            : fileSample.text;
+        return `#### Sample from ${path}\n${text}`;
+      }),
+    )
+  ).filter(Boolean);
 
   return [
     "Inferred repository targets from your question:",

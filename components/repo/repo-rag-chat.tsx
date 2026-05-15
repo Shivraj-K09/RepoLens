@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -483,7 +484,7 @@ export function RepoRagChat({
   const [mentionEntries, setMentionEntries] = useState<MentionPathEntry[]>([]);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [newChatDraftMode, setNewChatDraftMode] = useState(false);
+  const newChatDraftModeRef = useRef(false);
   const [chatHistoryOpen, setChatHistoryOpen] = useState(false);
   const [chatHistoryLoading, setChatHistoryLoading] = useState(false);
   const [chatHistoryError, setChatHistoryError] = useState<string | null>(null);
@@ -511,7 +512,7 @@ export function RepoRagChat({
     queueMicrotask(() => {
       setChats([]);
       setActiveChatId(null);
-      setNewChatDraftMode(false);
+      newChatDraftModeRef.current = false;
       setMessages([]);
       setChatError(undefined);
       setStatus("ready");
@@ -763,7 +764,7 @@ export function RepoRagChat({
       const body = (await res.json()) as { chats?: ChatSummary[] };
       const next = Array.isArray(body.chats) ? body.chats : [];
       setChats(next);
-      if (!activeChatId && !newChatDraftMode && next.length > 0) {
+      if (!activeChatId && !newChatDraftModeRef.current && next.length > 0) {
         setActiveChatId(next[0]!.id);
       }
     } catch (e) {
@@ -772,7 +773,7 @@ export function RepoRagChat({
     } finally {
       setChatHistoryLoading(false);
     }
-  }, [activeChatId, chatReady, chatsUrl, newChatDraftMode]);
+  }, [activeChatId, chatReady, chatsUrl]);
 
   const refreshChatsListOnly = useCallback(async () => {
     if (!chatReady) return;
@@ -851,19 +852,29 @@ export function RepoRagChat({
     [activeChatId, chatsUrl],
   );
 
+  const loadChatsEvent = useEffectEvent(() => {
+    void loadChats();
+  });
+  const loadChatMessagesEvent = useEffectEvent((chatId: string) => {
+    void loadChatMessages(chatId);
+  });
+  const runIndexStreamEvent = useEffectEvent(() => {
+    void runIndexStream();
+  });
+
   useEffect(() => {
     if (!chatReady) return;
     queueMicrotask(() => {
-      void loadChats();
+      loadChatsEvent();
     });
-  }, [chatReady, loadChats]);
+  }, [chatReady]);
 
   useEffect(() => {
     if (!chatReady || !activeChatId) return;
     queueMicrotask(() => {
-      void loadChatMessages(activeChatId);
+      loadChatMessagesEvent(activeChatId);
     });
-  }, [activeChatId, chatReady, loadChatMessages]);
+  }, [activeChatId, chatReady]);
 
   /** First load: either poll only (session says index in flight) or start stream. */
   useEffect(() => {
@@ -887,14 +898,13 @@ export function RepoRagChat({
     }
 
     queueMicrotask(() => {
-      void runIndexStream();
+      runIndexStreamEvent();
     });
   }, [
     effectiveIndexedSha,
     manualReindexing,
     resumePollOnly,
     refresh,
-    runIndexStream,
     indexError,
     indexing,
     routeOwner,
@@ -992,7 +1002,7 @@ export function RepoRagChat({
         const createdChatId = res.headers.get("X-RepoLens-Chat-Id")?.trim();
         if (createdChatId && !currentChatId) {
           setActiveChatId(createdChatId);
-          setNewChatDraftMode(false);
+          newChatDraftModeRef.current = false;
           void refreshChatsListOnly();
         }
 
@@ -1182,7 +1192,7 @@ export function RepoRagChat({
                   className="size-7 shrink-0"
                   disabled={!chatReady || chatLoading}
                   onClick={() => {
-                    setNewChatDraftMode(true);
+                    newChatDraftModeRef.current = true;
                     setActiveChatId(null);
                     setMessages([]);
                     setStatus("ready");
@@ -1247,14 +1257,14 @@ export function RepoRagChat({
         <div className="shrink-0 border-border border-b bg-background px-2 py-1.5">
           <div className="max-h-56 overflow-y-auto scrollbar-hide">
             {chatHistoryLoading ? (
-              <div className="space-y-1 px-1 py-1">
+              <div className="space-y-1 p-1">
                 {Array.from({ length: 4 }).map((_, idx) => (
                   <div
                     key={`chat-history-skeleton-${idx}`}
                     className="flex items-center gap-2 rounded-md px-2 py-1.5"
                   >
                     <Skeleton className="h-3.5 w-28" />
-                    <Skeleton className="ml-auto h-5 w-5 rounded-sm" />
+                    <Skeleton className="ml-auto size-5 rounded-sm" />
                   </div>
                 ))}
               </div>
@@ -1278,7 +1288,7 @@ export function RepoRagChat({
                       type="button"
                       className="min-w-0 flex-1 rounded-md px-1.5 py-1 text-left"
                       onClick={() => {
-                        setNewChatDraftMode(false);
+                        newChatDraftModeRef.current = false;
                         setActiveChatId(chat.id);
                         setChatHistoryOpen(false);
                       }}

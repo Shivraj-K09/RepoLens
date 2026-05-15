@@ -94,7 +94,7 @@ export function LandingRepoInput({ className }: LandingRepoInputProps) {
       ) : pending ? (
         <p className="mt-2 flex items-center justify-center gap-1.5 text-[12px] text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" />
-          Saving repository...
+          Saving repository…
         </p>
       ) : null}
     </div>

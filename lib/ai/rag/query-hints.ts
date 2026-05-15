@@ -81,12 +81,19 @@ export function extractPathHints(question: string): string[] {
 }
 
 export function extractKeywordHints(question: string): string[] {
-  const words = (question.toLowerCase().match(/[a-z0-9][a-z0-9._-]*/g) ?? [])
-    .map((w) => w.trim())
-    .filter((w) => w.length >= 3 && !QUESTION_STOPWORDS.has(w));
+  const words: string[] = [];
+  for (const m of question.toLowerCase().matchAll(/[a-z0-9][a-z0-9._-]*/g)) {
+    const w = m[0].trim();
+    if (w.length >= 3 && !QUESTION_STOPWORDS.has(w)) {
+      words.push(w);
+    }
+  }
   const uniq: string[] = [];
+  const uniqSet = new Set<string>();
   for (const w of words) {
-    if (!uniq.includes(w)) uniq.push(w);
+    if (uniqSet.has(w)) continue;
+    uniqSet.add(w);
+    uniq.push(w);
   }
   for (let i = 0; i < words.length - 1; i += 1) {
     const a = words[i];
@@ -94,8 +101,14 @@ export function extractKeywordHints(question: string): string[] {
     if (!a || !b) continue;
     const hyphen = `${a}-${b}`;
     const slash = `${a}/${b}`;
-    if (!uniq.includes(hyphen)) uniq.push(hyphen);
-    if (!uniq.includes(slash)) uniq.push(slash);
+    if (!uniqSet.has(hyphen)) {
+      uniqSet.add(hyphen);
+      uniq.push(hyphen);
+    }
+    if (!uniqSet.has(slash)) {
+      uniqSet.add(slash);
+      uniq.push(slash);
+    }
   }
   return uniq.slice(0, 6);
 }

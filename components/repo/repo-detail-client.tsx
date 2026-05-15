@@ -43,7 +43,7 @@ const RepoReadme = dynamic(
   () => import("@/components/repo/repo-readme").then((m) => m.RepoReadme),
   {
     loading: () => (
-      <div className="space-y-3 px-1 py-1">
+      <div className="space-y-3 p-1">
         <Skeleton className="h-6 w-48" />
         <Skeleton className="h-4 w-full" />
         <Skeleton className="h-4 w-11/12" />

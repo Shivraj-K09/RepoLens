@@ -197,9 +197,7 @@ export async function fetchRagSourceFilesFromGithub(
   const rootFiles =
     Array.isArray(rootListing)
       ? new Set(
-          rootListing
-            .filter((e) => e.kind === "file")
-            .map((e) => e.name),
+          rootListing.flatMap((e) => (e.kind === "file" ? [e.name] : [])),
         )
       : null;
   let totalChars = 0;
@@ -220,15 +218,18 @@ export async function fetchRagSourceFilesFromGithub(
     addFile("README", readmeText);
   }
 
-  for (const rel of PRIORITY_ROOT_FILES) {
+  const priorityRelFiltered = PRIORITY_ROOT_FILES.filter(
+    (rel) => !rootFiles || rootFiles.has(rel),
+  );
+  const priorityReads = await Promise.all(
+    priorityRelFiltered.map((rel) =>
+      githubReadRepoFileUtf8(owner, repo, trimmedRef, rel),
+    ),
+  );
+  for (let i = 0; i < priorityRelFiltered.length; i += 1) {
     if (collected.length >= maxFiles || totalChars >= maxTotalChars) break;
-    if (rootFiles && !rootFiles.has(rel)) continue;
-    const read = await githubReadRepoFileUtf8(
-      owner,
-      repo,
-      trimmedRef,
-      rel,
-    );
+    const rel = priorityRelFiltered[i]!;
+    const read = priorityReads[i]!;
     if (read.ok && read.text.trim()) {
       addFile(rel, read.text);
     }
@@ -240,8 +241,11 @@ export async function fetchRagSourceFilesFromGithub(
 
   if (Array.isArray(rootListing)) {
     const rootDirs = rootListing
-      .filter((e) => e.kind === "dir")
-      .filter((e) => !shouldSkipDirectoryName(e.name))
+      .filter(
+        (e) =>
+          e.kind === "dir" &&
+          !shouldSkipDirectoryName(e.name),
+      )
       .sort((a, b) => a.name.localeCompare(b.name));
     for (const d of rootDirs) {
       queue.push({ path: d.path, depth: 1 });
@@ -277,8 +281,11 @@ export async function fetchRagSourceFilesFromGithub(
     if (listed === null || listed === "not-a-directory") continue;
 
     const dirs = listed
-      .filter((e) => e.kind === "dir")
-      .filter((e) => !shouldSkipDirectoryName(e.name))
+      .filter(
+        (e) =>
+          e.kind === "dir" &&
+          !shouldSkipDirectoryName(e.name),
+      )
       .sort((a, b) => a.name.localeCompare(b.name));
 
     const files = listed

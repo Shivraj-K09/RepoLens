@@ -48,7 +48,7 @@ export default async function RepoDetailPage({
     );
   }
 
-  const query = (await searchParams) ?? {};
+  const query = searchParams !== undefined ? (await searchParams) ?? {} : {};
 
   let { data: repoRow } = await supabase
     .from("repositories")
