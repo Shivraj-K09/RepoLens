@@ -46,4 +46,7 @@ project.md
 TODO.md
 
 .agents
+.agent
 agents
+@agents
+/agents
