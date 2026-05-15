@@ -18,6 +18,7 @@ import {
   isCodebaseOverviewIntent,
   isFolderInventoryIntent,
   isLocationLookupIntent,
+  isModelContextQuestion,
   isMultiPartQuestion,
   isProviderBadRequestError,
   isStructureDetailIntent,
@@ -35,11 +36,20 @@ import {
   fetchCachedRepoTreePaths,
   withTimeoutOrFallback,
 } from "@/lib/ai/rag/cache";
-import { persistChatTurn } from "@/lib/ai/rag/chat-history";
 import {
+  fetchChatHistoryBlockForRag,
+  persistChatTurn,
+} from "@/lib/ai/rag/chat-history";
+import {
+  buildCachedRepositoryAiSummaryContext,
+  buildCommitDetailsContextForQuestion,
   buildDirectPathContext,
+  buildGitHubFactsContextForQuestion,
   buildInferredKeywordContext,
+  buildIssuePullDirectAnswerForQuestion,
   buildMentionedPathKindContext,
+  buildQuestionEvidenceContext,
+  buildRecentCommitsContextLines,
   buildRepositoryMetadataContext,
   buildRepositorySignalContext,
   buildRepositoryTreeContext,
@@ -66,6 +76,8 @@ const bodySchema = z.object({
   question: z.string().trim().min(1, "Question is required").max(8_000),
   /** When true, response is `text/plain` streamed with `streamText`. */
   stream: z.boolean().optional(),
+  /** Browser IANA timezone for resolving relative dates like "today". */
+  timezone: z.string().trim().min(1).max(64).optional(),
   /** Override default number of chunks (max 32 in SQL). */
   match_count: z.number().int().min(1).max(32).optional(),
   /** Optional persisted chat id for history. */
@@ -76,6 +88,58 @@ type RouteParams = { params: Promise<{ owner: string; repo: string }> };
 
 const SEMANTIC_SEARCH_TIMEOUT_MS = 3000;
 const CONTEXT_ENRICHMENT_TIMEOUT_MS = 1800;
+
+function isValidTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function formatDateInTimeZone(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+function buildRequestDateContext(timeZoneInput: string | undefined): string {
+  const now = new Date();
+  const timeZone =
+    timeZoneInput && isValidTimeZone(timeZoneInput) ? timeZoneInput : "UTC";
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+  return [
+    "Request date context:",
+    `- current instant (UTC): ${now.toISOString()}`,
+    `- user timezone: ${timeZone}`,
+    `- local today: ${formatDateInTimeZone(now, timeZone)}`,
+    `- local yesterday: ${formatDateInTimeZone(yesterday, timeZone)}`,
+    `- local tomorrow: ${formatDateInTimeZone(tomorrow, timeZone)}`,
+    '- Interpret "today", "yesterday", and similar relative date words as local calendar dates in this timezone unless the user specifies otherwise.',
+    '- Do not treat "yesterday" as "the last 24 hours"; use "last 24 hours" only when the user asks for a rolling 24-hour window.',
+    "- GitHub commit timestamps are UTC ISO strings; convert them to the user timezone before counting commits by local date.",
+  ].join("\n");
+}
+
+function isFollowUpQuestion(question: string): boolean {
+  return /\b(that|it|those|them|previous|above|same|again|that commit|that file|that folder)\b/i.test(
+    question,
+  );
+}
+
+function isGithubFactsQuestion(question: string): boolean {
+  return /\b(github|octokit|issues?|pull requests?|prs?|merge requests?|branches?|tags?|releases?|contributors?|contributed|stars?|forks?|watchers?|license|visibility|created|updated|pushed|default branch|languages?|topics?|workflows?|actions|commits?)\b/i.test(
+    question,
+  );
+}
 
 export async function POST(request: Request, { params }: RouteParams) {
   const { owner: ownerParam, repo: repoParam } = await params;
@@ -154,9 +218,11 @@ export async function POST(request: Request, { params }: RouteParams) {
   const {
     question,
     stream: streamRequested,
+    timezone,
     match_count,
     chat_id,
   } = parsed.data;
+  const requestDateContext = buildRequestDateContext(timezone);
   const summaryIntent = isSummaryIntent(question);
   const pathHints = extractPathHints(question);
   const keywordHints = extractKeywordHints(question);
@@ -165,6 +231,13 @@ export async function POST(request: Request, { params }: RouteParams) {
   const structureDetailIntent = isStructureDetailIntent(question);
   const locationLookupIntent = isLocationLookupIntent(question);
   const workflowGuidanceIntent = isWorkflowGuidanceIntent(question);
+  const modelContextQuestion = isModelContextQuestion(question);
+  const followUpQuestion = isFollowUpQuestion(question);
+  const githubFactsQuestion = isGithubFactsQuestion(question);
+  const commitActivityQuestion =
+    /\b(commits?|committers?|activity|recent changes?|latest changes?|history|today|yesterday|last 24 hours|20\d{2}-\d{2}-\d{2})\b/i.test(
+      question,
+    );
   const allowExternalLinks = userExplicitlyAskedForExternalLinks(question);
   const ignoreReadmeContext = userExplicitlyAskedToIgnoreReadme(question);
   const { data: repositoryMetadataRow } = await supabase
@@ -406,7 +479,7 @@ export async function POST(request: Request, { params }: RouteParams) {
           })
         : "";
     const inferredKeywordContext =
-      chunks.length === 0 && pathHints.length === 0
+      chunks.length <= 4 && pathHints.length === 0
         ? await withTimeoutOrFallback(
             buildInferredKeywordContext({
               owner: repoRow.github_owner,
@@ -420,9 +493,167 @@ export async function POST(request: Request, { params }: RouteParams) {
         : "";
     const readmeText = await readmeTextPromise;
 
+    const [
+      aiSummaryForRagContext,
+      githubFactsForRagContext,
+      recentCommitsForRagContext,
+      commitDetailsForRagContext,
+      priorChatContext,
+    ] = await Promise.all([
+      summaryIntent || codebaseOverviewIntent || modelContextQuestion
+        ? buildCachedRepositoryAiSummaryContext(supabase, ownerNorm, repoNorm)
+        : Promise.resolve(""),
+      buildGitHubFactsContextForQuestion({
+        owner: repoRow.github_owner,
+        repo: repoRow.github_repo,
+        defaultBranch:
+          (repositoryMetadataRow as RepositoryMetadataSnapshot | null)
+            ?.default_branch ?? null,
+        question,
+        timeZone: timezone,
+      }),
+      commitActivityQuestion
+        ? buildRecentCommitsContextLines({
+            owner: repoRow.github_owner,
+            repo: repoRow.github_repo,
+            defaultBranch:
+              (repositoryMetadataRow as RepositoryMetadataSnapshot | null)
+                ?.default_branch ?? null,
+            question,
+            timeZone: timezone,
+          })
+        : Promise.resolve(""),
+      buildCommitDetailsContextForQuestion({
+        owner: repoRow.github_owner,
+        repo: repoRow.github_repo,
+        defaultBranch:
+          (repositoryMetadataRow as RepositoryMetadataSnapshot | null)
+            ?.default_branch ?? null,
+        question,
+        timeZone: timezone,
+      }),
+      persistedChatId && (followUpQuestion || modelContextQuestion)
+        ? fetchChatHistoryBlockForRag({
+            supabase,
+            chatId: persistedChatId,
+          })
+        : Promise.resolve(""),
+    ]);
+    const directIssuePullAnswer = await buildIssuePullDirectAnswerForQuestion({
+      owner: repoRow.github_owner,
+      repo: repoRow.github_repo,
+      question,
+    });
+    if (directIssuePullAnswer) {
+      try {
+        await persistChatTurn({
+          supabase,
+          chatId: persistedChatId,
+          userQuestion: question,
+          assistantAnswer: directIssuePullAnswer,
+        });
+      } catch (persistError) {
+        console.warn("[rag] chat persistence failed (direct facts):", persistError);
+      }
+      const headers = new Headers();
+      headers.set("X-RepoLens-Commit-Sha", indexedSha);
+      if (persistedChatId) {
+        headers.set("X-RepoLens-Chat-Id", persistedChatId);
+      }
+      if (streamRequested === true) {
+        headers.set("Content-Type", "text/plain; charset=utf-8");
+        return new Response(directIssuePullAnswer, { status: 200, headers });
+      }
+      return NextResponse.json(
+        {
+          answer: directIssuePullAnswer,
+          commit_sha: indexedSha,
+          chat_id: persistedChatId,
+          sources: [],
+        },
+        { headers },
+      );
+    }
+    const questionEvidenceContext = await buildQuestionEvidenceContext({
+      owner: repoRow.github_owner,
+      repo: repoRow.github_repo,
+      commitSha: indexedSha,
+      question,
+      keywordHints,
+    });
+    const modelContextManifest = modelContextQuestion
+      ? [
+          "Model context manifest for this request:",
+          "- system instructions from buildRagPrompt",
+          "- repository header: owner, repo, indexed commit SHA",
+          `- semantic RAG chunks: ${chunks.length} matched chunk(s) from repository_embeddings`,
+          readmeText
+            ? "- README snapshot: included as secondary high-level context"
+            : "- README snapshot: not included for this question",
+          "- user question enriched with request date context",
+          priorChatContext ? "- prior chat history for follow-up resolution" : "",
+          repositoryMetadataContext
+            ? "- saved repository metadata snapshot from Supabase repositories table"
+            : "",
+          aiSummaryForRagContext
+            ? "- cached repository AI summary from repository_ai_summaries"
+            : "",
+          commitDetailsForRagContext
+            ? "- focused GitHub commit detail from Octokit getCommit"
+            : "",
+          githubFactsForRagContext
+            ? "- question-targeted live GitHub facts from Octokit"
+            : "",
+          questionEvidenceContext
+            ? "- question-targeted repository evidence from manifests, indexed paths, and matching snippets"
+            : "",
+          recentCommitsForRagContext
+            ? "- recent default-branch commits from Octokit listCommits"
+            : "",
+          pathKindContext ? "- resolved mentioned path kinds from indexed tree" : "",
+          directPathContext ? "- direct file/folder content for mentioned paths" : "",
+          authoritativeLocationContext
+            ? "- authoritative location candidates inferred from indexed tree"
+            : "",
+          keywordLocationContext
+            ? "- keyword location candidates from retrieved chunks"
+            : "",
+          inferredKeywordContext ? "- inferred keyword context from indexed tree" : "",
+          repositorySignalContext
+            ? "- implementation signals from indexed tree and package manifests"
+            : "",
+          workflowDocsContext ? "- repository workflow docs" : "",
+          repoTreeContext ? "- capped repository tree snapshot" : "",
+          "Answer this request from this manifest and the named context blocks.",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : "";
+
+    const slimPromptQuestion = [
+      question,
+      modelContextManifest,
+      requestDateContext,
+      githubFactsForRagContext,
+      commitDetailsForRagContext,
+      recentCommitsForRagContext,
+      questionEvidenceContext,
+      priorChatContext,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
     const richPromptQuestion = [
       question,
+      modelContextManifest,
+      requestDateContext,
+      priorChatContext,
       repositoryMetadataContext,
+      aiSummaryForRagContext,
+      commitDetailsForRagContext,
+      githubFactsForRagContext,
+      recentCommitsForRagContext,
+      questionEvidenceContext,
       pathKindContext,
       directPathContext
         ? `Direct path context from user-mentioned files/folders:\n\n${directPathContext}`
@@ -430,12 +661,18 @@ export async function POST(request: Request, { params }: RouteParams) {
       authoritativeLocationContext,
       keywordLocationContext,
       inferredKeywordContext,
-      repositorySignalContext,
+      githubFactsQuestion && !codebaseOverviewIntent && !summaryIntent
+        ? ""
+        : repositorySignalContext,
       workflowDocsContext,
       repoTreeContext,
     ]
       .filter(Boolean)
       .join("\n\n");
+    const promptChunks =
+      githubFactsQuestion && !locationLookupIntent && pathHints.length === 0
+        ? []
+        : chunks;
 
     const { system, user } = buildRagPrompt({
       repository: {
@@ -445,7 +682,7 @@ export async function POST(request: Request, { params }: RouteParams) {
       },
       originalQuestion: question,
       question: richPromptQuestion,
-      contextChunks: chunks,
+      contextChunks: promptChunks,
       readmeText,
     });
     const model = getHuggingFaceChatLanguageModel();
@@ -457,7 +694,11 @@ export async function POST(request: Request, { params }: RouteParams) {
     }));
 
     if (streamRequested === true) {
-      const preferAccurateSingleAnswer = isMultiPartQuestion(question);
+      const preferAccurateSingleAnswer =
+        isMultiPartQuestion(question) ||
+        locationLookupIntent ||
+        pathHints.length > 0 ||
+        question.trim().length > 90;
       if (preferAccurateSingleAnswer) {
         const generated = await generateText({
           model,
@@ -475,8 +716,8 @@ export async function POST(request: Request, { params }: RouteParams) {
               commitSha: indexedSha,
             },
             originalQuestion: question,
-            question,
-            contextChunks: chunks.slice(0, 8),
+            question: slimPromptQuestion,
+            contextChunks: promptChunks.slice(0, 6),
             readmeText: null,
           });
           return generateText({
@@ -484,6 +725,33 @@ export async function POST(request: Request, { params }: RouteParams) {
             system: slim.system,
             prompt: slim.user,
             temperature: 0,
+          }).catch(() => {
+            const ultraSlim = buildRagPrompt({
+              repository: {
+                owner: repoRow.github_owner,
+                repo: repoRow.github_repo,
+                commitSha: indexedSha,
+              },
+              originalQuestion: question,
+              question: [
+                question,
+                requestDateContext,
+                githubFactsForRagContext,
+                commitDetailsForRagContext,
+                recentCommitsForRagContext,
+                questionEvidenceContext,
+              ]
+                .filter(Boolean)
+                .join("\n\n"),
+              contextChunks: [],
+              readmeText: null,
+            });
+            return generateText({
+              model,
+              system: ultraSlim.system,
+              prompt: ultraSlim.user,
+              temperature: 0,
+            });
           });
         });
         let generatedText = generated.text;
@@ -552,7 +820,7 @@ export async function POST(request: Request, { params }: RouteParams) {
         if (!isProviderBadRequestError(error)) {
           throw error;
         }
-        streamChunks = chunks.slice(0, 8);
+        streamChunks = promptChunks.slice(0, 6);
         streamReadme = null;
         const slim = buildRagPrompt({
           repository: {
@@ -560,7 +828,8 @@ export async function POST(request: Request, { params }: RouteParams) {
             repo: repoRow.github_repo,
             commitSha: indexedSha,
           },
-          question,
+          originalQuestion: question,
+          question: slimPromptQuestion,
           contextChunks: streamChunks,
           readmeText: streamReadme,
         });
@@ -643,8 +912,9 @@ export async function POST(request: Request, { params }: RouteParams) {
           repo: repoRow.github_repo,
           commitSha: indexedSha,
         },
-        question,
-        contextChunks: chunks.slice(0, 8),
+        originalQuestion: question,
+        question: slimPromptQuestion,
+        contextChunks: promptChunks.slice(0, 6),
         readmeText: null,
       });
       return generateText({
@@ -652,6 +922,33 @@ export async function POST(request: Request, { params }: RouteParams) {
         system: slim.system,
         prompt: slim.user,
         temperature: 0,
+      }).catch(() => {
+        const ultraSlim = buildRagPrompt({
+          repository: {
+            owner: repoRow.github_owner,
+            repo: repoRow.github_repo,
+            commitSha: indexedSha,
+          },
+          originalQuestion: question,
+          question: [
+            question,
+            requestDateContext,
+            githubFactsForRagContext,
+            commitDetailsForRagContext,
+            recentCommitsForRagContext,
+            questionEvidenceContext,
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
+          contextChunks: [],
+          readmeText: null,
+        });
+        return generateText({
+          model,
+          system: ultraSlim.system,
+          prompt: ultraSlim.user,
+          temperature: 0,
+        });
       });
     });
     let finalText = text;

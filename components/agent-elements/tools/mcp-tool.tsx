@@ -243,7 +243,11 @@ export const McpTool = memo(function McpTool({
       >
         {codeBlock && (
           <div className="an-markdown text-[12px]">
-            <Streamdown plugins={{ code }} controls={{ code: false }}>
+            <Streamdown
+              linkSafety={{ enabled: false }}
+              plugins={{ code }}
+              controls={{ code: false }}
+            >
               {codeBlock}
             </Streamdown>
           </div>

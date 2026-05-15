@@ -11,6 +11,8 @@ const metadataInflight = new Map<string, Promise<GithubRepoMetadataDbPatch | nul
 export type GithubRepoMetadataDbPatch = {
   github_owner: string;
   github_repo: string;
+  github_owner_norm: string;
+  github_repo_norm: string;
   html_url: string | null;
   description: string | null;
   default_branch: string | null;
@@ -80,6 +82,8 @@ export async function fetchGithubRepoMetadataPatch(
     return {
       github_owner: apiOwner,
       github_repo: apiRepo,
+      github_owner_norm: apiOwner.toLowerCase(),
+      github_repo_norm: apiRepo.toLowerCase(),
       html_url: data.html_url ?? null,
       description: data.description ?? null,
       default_branch: branch,

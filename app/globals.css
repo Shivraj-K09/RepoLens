@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@streamdown/code/dist/*.js";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "../components/agent-elements/agent-ui.css";
@@ -155,6 +157,14 @@ body,
   }
 }
 
+.repo-code-preview-scroll {
+  overflow-anchor: none;
+}
+
+.repo-code-preview-scroll > * {
+  overflow-anchor: none;
+}
+
 @layer utilities {
   .scrollbar-hide {
     -ms-overflow-style: none;
@@ -163,6 +173,416 @@ body,
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+
+  /**
+   * Delete dialog perforation: inward notches only (y ≤ 100%) so fill paints;
+   * irregular x / depth so it reads like torn paper, not an even sawtooth.
+   * Keep footer -mt-* in repo-notes-tab in sync with `height`.
+   */
+  .sticky-torn-strip {
+    box-sizing: border-box;
+    flex-shrink: 0;
+    width: 100%;
+    min-width: 0;
+    align-self: stretch;
+    height: 52px;
+    margin-top: -1px;
+    clip-path: polygon(
+      0% 0%,
+      100% 0%,
+      100% 100%,
+      99.2% calc(100% - 14px),
+      96.1% 100%,
+      93.6% calc(100% - 7px),
+      90.4% 100%,
+      87.3% calc(100% - 15px),
+      84.8% 100%,
+      81.2% calc(100% - 9px),
+      78.0% 100%,
+      75.4% calc(100% - 13px),
+      72.1% 100%,
+      68.7% calc(100% - 6px),
+      65.9% 100%,
+      62.5% calc(100% - 16px),
+      59.3% 100%,
+      56.6% calc(100% - 8px),
+      53.2% 100%,
+      50.1% calc(100% - 12px),
+      47.0% 100%,
+      44.2% calc(100% - 10px),
+      40.8% 100%,
+      37.5% calc(100% - 14px),
+      34.4% 100%,
+      31.1% calc(100% - 7px),
+      28.3% 100%,
+      25.0% calc(100% - 11px),
+      22.2% 100%,
+      19.0% calc(100% - 15px),
+      16.4% 100%,
+      13.1% calc(100% - 9px),
+      10.6% 100%,
+      7.8% calc(100% - 13px),
+      4.7% 100%,
+      2.3% calc(100% - 8px),
+      0.8% 100%,
+      0% calc(100% - 11px),
+      0% 100%,
+      0% 0%
+    );
+  }
+
+  .sticky-delete-dialog-enter {
+    animation: sticky-delete-dialog-enter 440ms cubic-bezier(0.22, 1, 0.36, 1)
+      both;
+  }
+
+  .sticky-note-rip-inner {
+    animation: sticky-note-rip-inner 480ms cubic-bezier(0.33, 1, 0.4, 1) both;
+  }
+
+  /** Grid delete: horizontal seam + vertical seam; rotate wrapper (v2/v3 in TS) for diagonal tears */
+  .sticky-tear-frag-h-top {
+    clip-path: polygon(
+      0% 0%,
+      100% 0%,
+      100% 46%,
+      91% 48%,
+      100% 50%,
+      89% 52%,
+      100% 54%,
+      92% 56%,
+      100% 58%,
+      88% 60%,
+      0% 63%,
+      0% 0%
+    );
+    animation: sticky-tear-slice-h-a 720ms cubic-bezier(0.22, 0.88, 0.32, 1)
+      forwards;
+    transform-origin: 44% 58%;
+    will-change: transform, opacity;
+  }
+
+  .sticky-tear-frag-h-bottom {
+    clip-path: polygon(
+      0% 63%,
+      88% 60%,
+      100% 58%,
+      92% 56%,
+      100% 54%,
+      89% 52%,
+      100% 50%,
+      91% 48%,
+      100% 46%,
+      100% 100%,
+      0% 100%
+    );
+    animation: sticky-tear-slice-h-b 720ms cubic-bezier(0.22, 0.88, 0.32, 1)
+      forwards;
+    transform-origin: 56% 54%;
+    will-change: transform, opacity;
+  }
+
+  .sticky-tear-frag-v-left {
+    clip-path: polygon(
+      0% 0%,
+      47% 0%,
+      45% 9%,
+      48% 17%,
+      45% 25%,
+      48% 33%,
+      45% 41%,
+      48% 49%,
+      45% 57%,
+      48% 65%,
+      45% 73%,
+      48% 81%,
+      45% 89%,
+      48% 97%,
+      45% 100%,
+      0% 100%
+    );
+    animation: sticky-tear-slice-v-a 720ms cubic-bezier(0.22, 0.88, 0.32, 1)
+      forwards;
+    transform-origin: 32% 48%;
+    will-change: transform, opacity;
+  }
+
+  .sticky-tear-frag-v-right {
+    clip-path: polygon(
+      45% 100%,
+      48% 97%,
+      45% 89%,
+      48% 81%,
+      45% 73%,
+      48% 65%,
+      45% 57%,
+      48% 49%,
+      45% 41%,
+      48% 33%,
+      45% 25%,
+      48% 17%,
+      45% 9%,
+      47% 0%,
+      100% 0%,
+      100% 100%,
+      45% 100%
+    );
+    animation: sticky-tear-slice-v-b 720ms cubic-bezier(0.22, 0.88, 0.32, 1)
+      forwards;
+    transform-origin: 68% 52%;
+    will-change: transform, opacity;
+  }
+}
+
+@keyframes sticky-delete-dialog-enter {
+  from {
+    opacity: 0;
+    transform: translateY(18px) rotate(2.4deg) scale(0.94);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(-0.35deg) scale(1);
+  }
+}
+
+@keyframes sticky-note-rip-inner {
+  0% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  30% {
+    transform: translateY(4px) rotate(-2.8deg);
+  }
+
+  60% {
+    transform: translateY(6px) rotate(2deg);
+  }
+
+  100% {
+    transform: translateY(7px) rotate(-1.6deg);
+  }
+}
+
+@keyframes sticky-tear-slice-h-a {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+
+  22% {
+    transform: translate3d(-4%, 2px, 0) rotate(-5deg) scale(1.01);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(-52%, -46%, 0) rotate(-26deg) scale(0.68);
+  }
+}
+
+@keyframes sticky-tear-slice-h-b {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+
+  22% {
+    transform: translate3d(5%, -1px, 0) rotate(4deg) scale(1.01);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(56%, 52%, 0) rotate(28deg) scale(0.68);
+  }
+}
+
+@keyframes sticky-tear-slice-v-a {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+
+  22% {
+    transform: translate3d(-5%, 3px, 0) rotate(-7deg) scale(1.02);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(-62%, 28%, 0) rotate(-28deg) scale(0.66);
+  }
+}
+
+@keyframes sticky-tear-slice-v-b {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+
+  22% {
+    transform: translate3d(6%, -2px, 0) rotate(6deg) scale(1.02);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(58%, -32%, 0) rotate(30deg) scale(0.66);
+  }
+}
+
+/* Repo file browser: no frame around Streamdown/Shiki blocks; themes may set borders inline */
+.repo-code-explorer [data-streamdown="code-block"],
+.repo-code-explorer [data-streamdown="code-block-body"],
+.repo-code-explorer [data-streamdown="code-block-body"] pre,
+.repo-code-explorer [data-streamdown="code-block"] pre {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+.repo-code-explorer .shiki,
+.repo-code-explorer pre.shiki {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Streamdown code blocks use inner wrappers with `text-sm`; pin root size and inherit into the subtree. */
+.repo-code-explorer .repo-file-preview-code {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.repo-code-explorer .repo-file-preview-code * {
+  font-size: inherit !important;
+  line-height: inherit !important;
+}
+
+.repo-code-explorer .repo-file-preview-markdown {
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.repo-code-explorer .repo-file-preview-markdown [data-streamdown="code-block"],
+.repo-code-explorer
+  .repo-file-preview-markdown
+  [data-streamdown="code-block"]
+  * {
+  font-size: 11px !important;
+  line-height: 1.45 !important;
+}
+
+/* VS Code–style wrap + line numbers: float Streamdown’s ::before gutter so wrapped
+   lines stay beside the number column (BFC on each logical line row). */
+.repo-code-explorer [data-streamdown="code-block-body"] {
+  max-width: 100%;
+  overflow-x: hidden !important;
+}
+
+.repo-code-explorer pre.shiki,
+.repo-code-explorer [data-streamdown="code-block"] pre {
+  max-width: 100%;
+  white-space: normal !important;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.repo-code-explorer [data-streamdown="code-block-body"] pre code {
+  display: block !important;
+  white-space: normal !important;
+}
+
+.repo-code-explorer [data-streamdown="code-block-body"] pre code > span {
+  display: block !important;
+  overflow: hidden !important;
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-height: 1.45em;
+}
+
+/* Wider than Streamdown’s default w-6 — 1.5rem wraps 4+ digit line numbers. */
+.repo-code-explorer
+  [data-streamdown="code-block-body"]
+  pre
+  code
+  > span::before {
+  float: left !important;
+  box-sizing: border-box !important;
+  width: 3.5rem !important;
+  min-width: 3.5rem !important;
+  margin-right: 1.35rem !important;
+  padding-right: 0.35rem !important;
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap !important;
+}
+
+.repo-code-explorer [data-streamdown="code-block-body"] pre code > span * {
+  white-space: inherit !important;
+}
+
+/* Summary tab — overview Markdown rhythm (compact; Streamdown may wrap blocks) */
+.repo-summary-overview .repo-summary-markdown :where(h2) {
+  margin: 0.85rem 0 0.3rem;
+  padding-bottom: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: rgb(250 250 250);
+}
+
+.repo-summary-overview .repo-summary-markdown :where(h2):first-of-type {
+  margin-top: 0;
+}
+
+.repo-summary-overview .repo-summary-markdown :where(h3) {
+  margin: 0.65rem 0 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: rgb(230 230 230);
+}
+
+.repo-summary-overview .repo-summary-markdown :where(p) {
+  margin: 0.25rem 0 0.4rem;
+  line-height: 1.52;
+  color: rgb(200 200 205);
+}
+
+.repo-summary-overview .repo-summary-markdown :where(ul, ol) {
+  margin: 0.2rem 0 0.45rem;
+  padding-left: 1.05rem;
+}
+
+.repo-summary-overview .repo-summary-markdown :where(li) {
+  margin: 0.1rem 0;
+  line-height: 1.48;
+}
+
+.repo-summary-overview .repo-summary-markdown :where(p + p) {
+  margin-top: 0.35rem;
+}
+
+.repo-summary-overview .repo-summary-markdown :where(li)::marker {
+  color: rgb(150 150 158);
+}
+
+.repo-summary-overview .repo-summary-markdown :where(h2 + :is(ul, ol)) {
+  margin-top: 0.15rem;
+}
+
+.repo-summary-overview .repo-summary-markdown :where(h2 + p) {
+  margin-top: 0.35rem;
+}
+
+.repo-summary-overview .repo-summary-markdown :where(strong) {
+  font-weight: 600;
+  color: rgb(235 235 240);
+}
+
+.repo-summary-overview .repo-summary-markdown :where(a) {
+  color: color-mix(in oklab, var(--foreground) 78%, transparent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /* Centered README hero: stack badge <p>/<a> blocks in a row (e.g. shields.io) */

@@ -161,6 +161,18 @@ function formatTimestamp(date: Date, referenceNow: Date): string {
   return dateFormatter.format(date);
 }
 
+function formatCreatedAtTimestamp(params: {
+  createdAt?: Date | string;
+  referenceNow: Date | null;
+}): string | undefined {
+  const { createdAt, referenceNow } = params;
+  if (!referenceNow || !createdAt) return undefined;
+  const createdDate =
+    createdAt instanceof Date ? createdAt : new Date(createdAt);
+  if (Number.isNaN(createdDate.getTime())) return undefined;
+  return formatTimestamp(createdDate, referenceNow);
+}
+
 function quickStableKey(seed: string): string {
   let h = 2166136261;
   for (let i = 0; i < seed.length; i += 1) {
@@ -546,13 +558,10 @@ export const MessageList = memo(function MessageList({
                     )?.createdAt;
                     const userCopyKey = `user-${turn.userMsg.id}`;
                     const userCopyVisible = activeCopyId === userCopyKey;
-                    const userTimestamp =
-                      formatClock && userCreatedAt
-                        ? formatTimestamp(
-                            new Date(userCreatedAt),
-                            formatClock,
-                          )
-                        : undefined;
+                    const userTimestamp = formatCreatedAtTimestamp({
+                      createdAt: userCreatedAt,
+                      referenceNow: formatClock,
+                    });
                     // Only render the toolbar when it has content — copy
                     // button (gated by showCopyToolbar) or a timestamp.
                     // Otherwise a 28px-tall empty row inflates the gap to the

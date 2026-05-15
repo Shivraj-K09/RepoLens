@@ -1,6 +1,7 @@
 import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { ensureRepoAiSummaryCached } from "@/lib/ai/ensure-repo-ai-summary-cached";
 import {
   indexRepositoryEmbeddings,
   resolveCommitShaForIndexing,
@@ -200,6 +201,33 @@ export async function POST(request: Request) {
         });
       } catch (e) {
         console.error("[POST /api/repos] Background embedding index failed:", e);
+      }
+    });
+
+    after(async () => {
+      try {
+        const { data: repoRow, error: rowErr } = await supabase
+          .from("repositories")
+          .select(
+            "github_owner, github_repo, last_commit_sha, default_branch, description, stars_count, forks_count",
+          )
+          .eq("id", repositoryId)
+          .single();
+
+        if (rowErr || !repoRow) return;
+
+        await ensureRepoAiSummaryCached({
+          supabase,
+          githubOwner: repoRow.github_owner,
+          githubRepo: repoRow.github_repo,
+          lastCommitSha: repoRow.last_commit_sha,
+          description: repoRow.description,
+          defaultBranch: repoRow.default_branch,
+          stars: repoRow.stars_count,
+          forks: repoRow.forks_count,
+        });
+      } catch (e) {
+        console.error("[POST /api/repos] Background AI summary failed:", e);
       }
     });
   }

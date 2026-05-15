@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ChatStatus, UIMessage } from "ai";
-import { Clock3, Plus, RotateCw, Trash2 } from "lucide-react";
+import { Clock3, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export type RepoRagChatProps = {
@@ -212,6 +212,12 @@ function normalizeMentionCandidate(raw: string): string | null {
   return clean;
 }
 
+function looksLikeIanaTimeZone(value: string): boolean {
+  return /^[A-Z][A-Za-z_+-]+\/[A-Z][A-Za-z_+-]+(?:\/[A-Z][A-Za-z_+-]+)?$/.test(
+    value,
+  );
+}
+
 function pathLooksLikeDirectory(path: string): boolean {
   const leaf = path.split("/").pop() ?? path;
   return !leaf.includes(".");
@@ -267,6 +273,7 @@ function linkifyAssistantPaths(
       const trailingSlashDir = rawText.trim().endsWith("/");
       const normalized = normalizeMentionCandidate(rawText.replace(/\/+$/, ""));
       if (!normalized) return `\`${raw}\``;
+      if (looksLikeIanaTimeZone(normalized)) return `\`${raw}\``;
       const pathLike = normalized.includes("/") || normalized.includes(".");
       if (!pathLike) return `\`${raw}\``;
       const inferredDir =
@@ -295,6 +302,7 @@ function linkifyAssistantPaths(
       const trailingSlashDir = rawText.trim().endsWith("/");
       const normalized = normalizeMentionCandidate(rawText.replace(/\/+$/, ""));
       if (!normalized) return match;
+      if (looksLikeIanaTimeZone(normalized)) return match;
       const inferredDir =
         trailingSlashDir ||
         pathLooksLikeDirectory(normalized) ||
@@ -324,6 +332,7 @@ function linkifyAssistantPaths(
       if (pathText.includes("](")) return match;
       const normalized = normalizeMentionCandidate(pathText);
       if (!normalized) return match;
+      if (looksLikeIanaTimeZone(normalized)) return match;
       const inferredDir = pathLooksLikeDirectory(normalized);
       const href = codeTabHref(
         routeOwner,
@@ -501,6 +510,13 @@ export function RepoRagChat({
   const ragUrl = `/api/repos/${encodeURIComponent(routeOwner)}/${encodeURIComponent(routeRepo)}/rag`;
   const indexUrl = `/api/repos/${encodeURIComponent(routeOwner)}/${encodeURIComponent(routeRepo)}/index-embeddings?stream=1`;
   const chatsUrl = `/api/repos/${encodeURIComponent(routeOwner)}/${encodeURIComponent(routeRepo)}/chats`;
+  const clientTimeZone = useMemo(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+    } catch {
+      return null;
+    }
+  }, []);
 
   useLayoutEffect(() => {
     queueMicrotask(() => {
@@ -863,6 +879,26 @@ export function RepoRagChat({
   });
 
   useEffect(() => {
+    const onReindexRequest = (event: Event) => {
+      const custom = event as CustomEvent<{ owner?: string; repo?: string }>;
+      const owner = custom.detail?.owner?.toLowerCase() ?? "";
+      const repo = custom.detail?.repo?.toLowerCase() ?? "";
+      if (!owner || !repo) return;
+      if (
+        owner !== routeOwner.toLowerCase() ||
+        repo !== routeRepo.toLowerCase()
+      ) {
+        return;
+      }
+      void runIndexStream({ force: true });
+    };
+
+    window.addEventListener("repo-rag-reindex-request", onReindexRequest);
+    return () =>
+      window.removeEventListener("repo-rag-reindex-request", onReindexRequest);
+  }, [routeOwner, routeRepo, runIndexStream]);
+
+  useEffect(() => {
     if (!chatReady) return;
     queueMicrotask(() => {
       loadChatsEvent();
@@ -983,6 +1019,7 @@ export function RepoRagChat({
           body: JSON.stringify({
             question: trimmed,
             stream: true,
+            ...(clientTimeZone ? { timezone: clientTimeZone } : {}),
             ...(currentChatId ? { chat_id: currentChatId } : {}),
           }),
           signal: ac.signal,
@@ -999,9 +1036,10 @@ export function RepoRagChat({
           throw new Error("Empty response body");
         }
 
-        const createdChatId = res.headers.get("X-RepoLens-Chat-Id")?.trim();
-        if (createdChatId && !currentChatId) {
-          setActiveChatId(createdChatId);
+        const headerChatId = res.headers.get("X-RepoLens-Chat-Id")?.trim();
+        const effectiveChatId = headerChatId || currentChatId;
+        if (headerChatId && !currentChatId) {
+          setActiveChatId(headerChatId);
           newChatDraftModeRef.current = false;
           void refreshChatsListOnly();
         }
@@ -1062,7 +1100,8 @@ export function RepoRagChat({
             body: JSON.stringify({
               question: trimmed,
               stream: false,
-              ...(currentChatId ? { chat_id: currentChatId } : {}),
+              ...(clientTimeZone ? { timezone: clientTimeZone } : {}),
+              ...(effectiveChatId ? { chat_id: effectiveChatId } : {}),
             }),
             signal: ac.signal,
           });
@@ -1154,6 +1193,7 @@ export function RepoRagChat({
       refreshChatsListOnly,
       routeOwner,
       routeRepo,
+      clientTimeZone,
     ],
   );
 
@@ -1225,31 +1265,6 @@ export function RepoRagChat({
                 Chat history
               </TooltipContent>
             </Tooltip>
-            <Tooltip delayDuration={200}>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 shrink-0"
-                  disabled={indexing}
-                  onClick={() => {
-                    void runIndexStream({ force: true });
-                  }}
-                  aria-label="Re-index repository"
-                >
-                  <RotateCw
-                    className={cn(
-                      "size-4",
-                      manualReindexing ? "animate-spin" : "",
-                    )}
-                  />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="left" align="center">
-                Re-index repository
-              </TooltipContent>
-            </Tooltip>
           </div>
         </div>
       </div>
@@ -1302,7 +1317,7 @@ export function RepoRagChat({
                       variant="ghost"
                       size="icon"
                       className={cn(
-                        "h-6 w-6 shrink-0 text-destructive hover:bg-destructive/10",
+                        "size-6 shrink-0 text-destructive hover:bg-destructive/10",
                         "opacity-0 transition-opacity group-hover/history-item:opacity-100",
                         activeChatId === chat.id ? "opacity-100" : "",
                       )}

@@ -2,6 +2,11 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { RepoDetailClient } from "@/components/repo/repo-detail-client";
+import {
+  fetchFreshRepoAiSummaryRow,
+  selectInitialAiSummaryPayload,
+} from "@/lib/ai/ensure-repo-ai-summary-cached";
+import { fetchGithubRepoInsights } from "@/lib/github/fetch-repo-insights";
 import { fetchGithubRepoMetadataPatch } from "@/lib/github/fetch-repo-metadata";
 import { fetchGithubRepoReadmeMarkdown } from "@/lib/github/fetch-readme";
 import { fetchGithubRepoRootContents } from "@/lib/github/fetch-repo-root-contents";
@@ -13,6 +18,13 @@ type RepoDetailPageProps = {
   params: Promise<{ owner: string; repo: string }>;
   searchParams?: Promise<{ tab?: string; path?: string }>;
 };
+
+function normalizeRepoTab(tab: string | undefined): string | undefined {
+  const t = tab?.trim().toLowerCase();
+  if (!t) return undefined;
+  if (t === "overview" || t === "readme") return "summary";
+  return t;
+}
 
 export async function generateMetadata({
   params,
@@ -65,6 +77,8 @@ export default async function RepoDetailPage({
   }
 
   const incomplete =
+    !repoRow.description ||
+    !repoRow.html_url ||
     repoRow.stars_count === null ||
     repoRow.forks_count === null ||
     repoRow.default_branch === null;
@@ -97,13 +111,14 @@ export default async function RepoDetailPage({
   const metadataPartial =
     repoRow.stars_count === null || repoRow.forks_count === null;
 
-  const [readmeMarkdown, rootEntries] = await Promise.all([
+  const [readmeMarkdown, rootEntries, repoInsights] = await Promise.all([
     fetchGithubRepoReadmeMarkdown(repoRow.github_owner, repoRow.github_repo),
     fetchGithubRepoRootContents(
       repoRow.github_owner,
       repoRow.github_repo,
       repoRow.default_branch,
     ),
+    fetchGithubRepoInsights(repoRow.github_owner, repoRow.github_repo),
   ]);
 
   const refGithub = repoRow.default_branch?.trim() ?? "";
@@ -115,6 +130,21 @@ export default async function RepoDetailPage({
         rootEntries,
       )
     : null;
+
+  const summaryRow = await fetchFreshRepoAiSummaryRow(
+    supabase,
+    ownerSlug,
+    repoSlug,
+  );
+
+  const initialAiSummary = selectInitialAiSummaryPayload(
+    summaryRow,
+    repoRow.last_commit_sha,
+  );
+
+  const canGenerateAiSummary = Boolean(
+    process.env.HUGGINGFACE_API_KEY?.trim(),
+  );
 
   await recordRepositoryVisit(supabase, user.id, repoRow.id);
 
@@ -137,9 +167,12 @@ export default async function RepoDetailPage({
       readmeMarkdown={readmeMarkdown}
       initialRootEntries={rootEntries}
       techStack={techStack}
+      repoInsights={repoInsights}
       indexedCommitSha={repoRow.indexed_commit_sha ?? null}
-      initialTab={query.tab}
+      initialTab={normalizeRepoTab(query.tab)}
       initialCodePath={query.path}
+      initialAiSummary={initialAiSummary}
+      canGenerateAiSummary={canGenerateAiSummary}
     />
   );
 }

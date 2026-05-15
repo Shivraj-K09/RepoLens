@@ -63,6 +63,17 @@ export function userExplicitlyAskedToIgnoreReadme(question: string): boolean {
   );
 }
 
+export function isModelContextQuestion(question: string): boolean {
+  const q = question.toLowerCase();
+  return (
+    /\b(exact|what|which|list|show|explain)\b.*\b(context|data sources?|evidence|sent|passed)\b.*\b(ai|model|prompt)\b/.test(
+      q,
+    ) ||
+    /\bwhat\b.*\b(context|data sources?)\b.*\bsent\b/.test(q) ||
+    /\bmodel context manifest\b/.test(q)
+  );
+}
+
 export function isProviderBadRequestError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return (
@@ -137,4 +148,3 @@ export function isSummaryIntent(question: string): boolean {
     q.includes("who it is for")
   );
 }
-

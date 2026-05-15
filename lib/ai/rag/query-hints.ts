@@ -38,6 +38,7 @@ const QUESTION_STOPWORDS = new Set([
 
 export function extractPathHints(question: string): string[] {
   const uniq: string[] = [];
+  const uniqSet = new Set<string>();
 
   function pushHint(v: string, options?: { allowBare?: boolean }) {
     const allowBare = options?.allowBare === true;
@@ -48,7 +49,9 @@ export function extractPathHints(question: string): string[] {
     if (!clean) return;
     if (clean.length < 2) return;
     if (!allowBare && !clean.includes("/") && !clean.startsWith(".")) return;
-    if (!uniq.includes(clean)) uniq.push(clean);
+    if (uniqSet.has(clean)) return;
+    uniqSet.add(clean);
+    uniq.push(clean);
   }
 
   for (const m of question.matchAll(/@([^\s`"'()<>]+)/g)) {

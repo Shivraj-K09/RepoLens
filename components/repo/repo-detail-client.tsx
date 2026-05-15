@@ -1,98 +1,36 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import Image from "next/image";
-import Link from "next/link";
 import {
-  FolderGit,
+  Code2,
+  Clock3,
   GitBranch,
   GitFork,
+  Layers3,
+  Scale,
   Star,
-  ExternalLink,
+  Users,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { useMemo, useState } from "react";
 
-import { RepoOverviewContent } from "@/components/repo/repo-overview";
-import { Sidebar, SidebarContent } from "@/components/ui/sidebar";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { RepoAiSidebar } from "@/components/repo/repo-ai-sidebar";
+import { RepoCodeExplorer } from "@/components/repo/repo-code-explorer";
+import { RepoCommitsTab } from "@/components/repo/repo-commits-tab";
+import { RepoNotesTab } from "@/components/repo/repo-notes-tab";
+import { RepoSummaryTab } from "@/components/repo/repo-summary-tab";
+import {
+  iconSlugForLabel,
+  StatTile,
+  TechChip,
+} from "@/components/repo/repo-detail-ui";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import type { RepoRootEntry } from "@/lib/github/fetch-repo-root-contents";
+import type { GithubRepoInsights } from "@/lib/github/fetch-repo-insights";
 import type { RepoTechStackSummary } from "@/lib/github/repo-tech-stack";
-
 import { cn } from "@/lib/utils";
-
-const REPO_STAT_LOCALE = "en-US";
-
-const RepoFileExplorer = dynamic(
-  () =>
-    import("@/components/repo/repo-file-explorer").then(
-      (m) => m.RepoFileExplorer,
-    ),
-  {
-    loading: () => (
-      <div className="p-3.5">
-        <Skeleton className="h-10 w-full" />
-        <Skeleton className="mt-2 h-56 w-full" />
-      </div>
-    ),
-  },
-);
-
-const RepoReadme = dynamic(
-  () => import("@/components/repo/repo-readme").then((m) => m.RepoReadme),
-  {
-    loading: () => (
-      <div className="space-y-3 p-1">
-        <Skeleton className="h-6 w-48" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-11/12" />
-        <Skeleton className="h-4 w-10/12" />
-      </div>
-    ),
-  },
-);
-
-const RepoRagChat = dynamic(
-  () => import("@/components/repo/repo-rag-chat").then((m) => m.RepoRagChat),
-  {
-    loading: () => (
-      <div className="space-y-2 p-3">
-        <Skeleton className="h-8 w-full" />
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-24 w-full" />
-      </div>
-    ),
-  },
-);
-
-function RepoDetailTabButton({
-  label,
-  active,
-  onPick,
-}: {
-  label: string;
-  active: boolean;
-  onPick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onPick}
-      className={cn(
-        "-mb-px shrink-0 border-transparent border-b-[1.5px] pb-2 font-medium transition-colors",
-        "text-[12.5px] tracking-tight",
-        active
-          ? "border-foreground text-foreground"
-          : "border-transparent text-muted-foreground hover:text-foreground/90",
-      )}
-    >
-      {label}
-    </button>
-  );
-}
 
 export type RepoDetailClientProps = {
   routeOwner: string;
@@ -110,329 +48,355 @@ export type RepoDetailClientProps = {
   readmeMarkdown: string | null;
   initialRootEntries: RepoRootEntry[] | null;
   techStack: RepoTechStackSummary | null;
+  repoInsights: GithubRepoInsights;
   /** Set after indexing (Phase 4); enables RAG chat in the right rail. */
   indexedCommitSha: string | null;
-  /** Optional tab requested via URL query (`overview` | `code` | `readme`). */
+  /** Optional tab requested via URL query (`summary` | `code` | `commits` | `notes` | legacy `overview` | `readme`). */
   initialTab?: string | null;
   /** Optional path to auto-open in code explorer (URL query `path`). */
   initialCodePath?: string | null;
+  /** Cached AI Markdown summary when present and not stale. */
+  initialAiSummary?: { markdown: string; updatedAt: string } | null;
+  canGenerateAiSummary?: boolean;
 };
+
+type RepoSectionTab = "summary" | "code" | "commits" | "notes";
+
+function repoSectionTabTriggerClass(tab: RepoSectionTab, activeTab: string) {
+  return cn(
+    "box-border flex h-10 flex-none! basis-auto! items-center justify-center rounded-none bg-transparent! min-w-0 px-4 py-0! text-[13px] leading-none tracking-tight shadow-none transition-colors",
+    "!border-0",
+    "after:absolute after:inset-x-4 after:bottom-0 after:z-10 after:h-0.5 after:translate-y-[-1px] after:rounded-none after:transition-opacity",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+    activeTab === tab
+      ? "cursor-default font-semibold text-foreground after:bg-foreground after:opacity-100"
+      : "cursor-pointer font-medium text-muted-foreground after:bg-transparent after:opacity-0 hover:text-foreground/90",
+  );
+}
 
 /** Repo surface — Overview (metadata + tech) · Code explorer · README. */
 export function RepoDetailClient(props: RepoDetailClientProps) {
-  const normalizedInitialTab: "overview" | "code" | "readme" =
-    props.initialTab === "readme"
-      ? "readme"
-      : props.initialTab === "code" || (props.initialCodePath?.trim() ?? "") !== ""
-        ? "code"
-        : "overview";
-  const [tab, setTab] = useState<"overview" | "code" | "readme">(
-    normalizedInitialTab,
+  const starsText =
+    typeof props.stars === "number" ? props.stars.toLocaleString("en-US") : "—";
+  const forksText =
+    typeof props.forks === "number" ? props.forks.toLocaleString("en-US") : "—";
+  const contributionsText =
+    typeof props.repoInsights.contributionsTotal === "number"
+      ? props.repoInsights.contributionsTotal.toLocaleString("en-US")
+      : "—";
+  const lastUpdatedText = props.repoInsights.lastUpdated
+    ? new Date(props.repoInsights.lastUpdated).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "—";
+  const techStackItems = useMemo(
+    () =>
+      props.techStack?.ecosystems.filter((label) => label.trim().length > 0) ??
+      [],
+    [props.techStack],
   );
-  const refBranch =
-    props.defaultBranch?.trim() !== "" ? props.defaultBranch!.trim() : "";
-  const initialCodePath = (props.initialCodePath ?? "").trim() || null;
-  const [openPathRequest, setOpenPathRequest] = useState(() => ({
-    path: initialCodePath,
-    requestId: 1,
-  }));
+  const languageItems = useMemo(
+    () =>
+      props.repoInsights.languages.filter((label) => label.trim().length > 0) ??
+      [],
+    [props.repoInsights.languages],
+  );
+  const hasDescription = Boolean(props.description?.trim());
+  const parsedLastUpdated = useMemo(() => {
+    if (!props.repoInsights.lastUpdated) return null;
+    const d = new Date(props.repoInsights.lastUpdated);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, [props.repoInsights.lastUpdated]);
+  const hasValidUpdatedAt = parsedLastUpdated != null;
+  const homepageText = props.repoInsights.homepageUrl?.trim() || null;
+  const techBadges = useMemo(
+    () =>
+      techStackItems.map((label) => ({ label, slug: iconSlugForLabel(label) })),
+    [techStackItems],
+  );
+  const languageBadges = useMemo(
+    () =>
+      languageItems.map((label) => ({ label, slug: iconSlugForLabel(label) })),
+    [languageItems],
+  );
 
-  useEffect(() => {
-    queueMicrotask(() => {
-      setTab(normalizedInitialTab);
-    });
-  }, [normalizedInitialTab]);
-
-  useEffect(() => {
-    const pathFromQuery = (props.initialCodePath ?? "").trim();
-    if (!pathFromQuery) return;
-    queueMicrotask(() => {
-      setOpenPathRequest((prev) => ({
-        path: pathFromQuery,
-        requestId: prev.requestId + 1,
-      }));
-    });
-  }, [props.initialCodePath]);
-
-  useEffect(() => {
-    const onRepoOpenPath = (event: Event) => {
-      const custom = event as CustomEvent<{
-        owner?: string;
-        repo?: string;
-        path?: string;
-      }>;
-      const owner = custom.detail?.owner?.toLowerCase() ?? "";
-      const repo = custom.detail?.repo?.toLowerCase() ?? "";
-      const path = custom.detail?.path?.trim() ?? "";
-      if (!owner || !repo || !path) return;
-      if (
-        owner !== props.routeOwner.toLowerCase() ||
-        repo !== props.routeRepo.toLowerCase()
-      ) {
-        return;
-      }
-      setTab("code");
-      setOpenPathRequest((prev) => ({
-        path,
-        requestId: prev.requestId + 1,
-      }));
-    };
-
-    window.addEventListener("repo-open-path", onRepoOpenPath);
-    return () => window.removeEventListener("repo-open-path", onRepoOpenPath);
-  }, [props.routeOwner, props.routeRepo]);
-
-  const stats = useMemo(() => {
-    const st =
-      props.stars != null ? props.stars.toLocaleString(REPO_STAT_LOCALE) : "-";
-    const fk =
-      props.forks != null ? props.forks.toLocaleString(REPO_STAT_LOCALE) : "-";
-    return { stars: st, forks: fk };
-  }, [props.forks, props.stars]);
+  const [repoViewTab, setRepoViewTab] = useState(() => {
+    const t = props.initialTab?.trim().toLowerCase();
+    if (t === "code") return "code";
+    if (t === "commits") return "commits";
+    if (t === "notes") return "notes";
+    return "summary";
+  });
 
   return (
-    <div
-      className={cn(
-        "flex h-full min-h-0 w-full flex-col overflow-hidden text-left",
-        "lg:flex-row lg:items-stretch",
-      )}
-    >
-      <div className="scrollbar-hide flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto pb-14 lg:pb-6">
-        <header className="border-border/65 border-b px-6 py-4 md:px-8 lg:py-5">
-          <div className="flex items-start gap-3">
-            <Image
-              src={props.avatarUrl}
-              alt=""
-              width={32}
-              height={32}
-              unoptimized
-              className="size-8 shrink-0 rounded-md border border-border/65 bg-muted object-cover"
-            />
-            <div className="min-w-0 flex-1 space-y-2.5">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.25">
-                <div className="flex min-w-0 items-center gap-1 font-medium text-[14px] text-foreground leading-tight tracking-tight">
-                  <span className="text-muted-foreground/85">
-                    <FolderGit
-                      aria-hidden
-                      strokeWidth={1.75}
-                      className="size-[14px] shrink-0"
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden text-left">
+      <header className="shrink-0 border-border/65 border-b flex items-center h-14 w-full px-4 md:px-6">
+        <div className="flex w-full min-w-0 items-center justify-between gap-3">
+          <h1 className="min-w-0 flex-1 truncate font-medium text-[14px] text-foreground tracking-tight">
+            <span className="text-muted-foreground">{props.displayOwner}</span>
+            <span className="text-muted-foreground/55">/</span>
+            <span>{props.displayRepo}</span>
+          </h1>
+
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5"
+              onClick={() => {
+                window.dispatchEvent(
+                  new CustomEvent("repo-rag-reindex-request", {
+                    detail: {
+                      owner: props.routeOwner,
+                      repo: props.routeRepo,
+                    },
+                  }),
+                );
+              }}
+            >
+              <GitBranch className="size-3.5" aria-hidden />
+              <span>Re-index repo</span>
+            </Button>
+            {/* <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5"
+              aria-label="Bookmark repository"
+            >
+              <Bookmark className="size-3.5" aria-hidden />
+              <span>Bookmark repo</span>
+            </Button> */}
+          </div>
+        </div>
+      </header>
+      {/* Main content */}
+      <div
+        className={cn(
+          "flex min-h-0 w-full flex-1 flex-col overflow-hidden",
+          "lg:flex-row lg:items-stretch",
+        )}
+      >
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <section className="w-full shrink-0 border-border/65 border-b">
+            <div className="flex flex-col gap-3 px-4 py-3 md:px-6 md:py-4 xl:flex-row xl:items-stretch xl:gap-4">
+              <div className="min-w-0 flex-1">
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3 pb-2.5">
+                    <Image
+                      src={props.avatarUrl}
+                      alt=""
+                      width={64}
+                      height={64}
+                      unoptimized
+                      className="size-16 shrink-0 rounded-md border border-border/65 object-cover"
                     />
-                  </span>
-                  <h1 className="wrap-break-word truncate">
-                    <span className="font-normal text-muted-foreground">
-                      {props.displayOwner}
-                    </span>
-                    <span className="text-muted-foreground/55">/</span>
-                    <span>{props.displayRepo}</span>
-                  </h1>
+                    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                      <p className="m-0 truncate font-semibold text-[13.5px] text-foreground leading-snug tracking-tight">
+                        {props.displayOwner}/{props.displayRepo}
+                      </p>
+                      <p className="m-0 text-[12px] text-muted-foreground leading-snug">
+                        {hasDescription
+                          ? props.description!.trim()
+                          : "No description available."}
+                      </p>
+                      {homepageText ? (
+                        <Link
+                          href={homepageText}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="m-0 inline-flex w-fit max-w-full truncate text-[12px] leading-snug text-sky-400 underline decoration-sky-400/70 underline-offset-2 hover:text-sky-300"
+                          title={homepageText}
+                        >
+                          {homepageText}
+                        </Link>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2.5 md:grid-cols-2">
+                    <div>
+                      <p className="mb-1.5 inline-flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <Layers3 className="size-3.5" aria-hidden />
+                        Tech stack
+                      </p>
+                      {techStackItems.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.25">
+                          {techBadges.map((item) => (
+                            <TechChip
+                              key={item.label}
+                              label={item.label}
+                              iconSlug={item.slug}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[11.5px] text-muted-foreground">
+                          Not detected.
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <p className="mb-1.5 inline-flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <Code2 className="size-3.5" aria-hidden />
+                        Languages
+                      </p>
+                      {languageItems.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.25">
+                          {languageBadges.map((item) => (
+                            <TechChip
+                              key={item.label}
+                              label={item.label}
+                              iconSlug={item.slug}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[11.5px] text-muted-foreground">
+                          Not available.
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                {props.htmlUrl ? (
-                  <Link
-                    href={props.htmlUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex shrink-0 items-center gap-1 text-muted-foreground text-[11.75px] underline decoration-border underline-offset-[3px] hover:text-foreground"
-                  >
-                    <ExternalLink
-                      aria-hidden
-                      strokeWidth={1.75}
-                      className="size-3 opacity-85"
-                    />
-                    GitHub
-                  </Link>
-                ) : null}
               </div>
 
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.75 text-[11.85px] text-muted-foreground">
-                <div className="inline-flex items-center gap-1.25">
-                  <Star
-                    aria-hidden
-                    strokeWidth={1.7}
-                    className="size-3 shrink-0 opacity-80"
-                  />
-                  <span className="sr-only">Stars</span>
-                  <span className="font-medium tabular-nums text-foreground">
-                    {stats.stars}
-                  </span>
-                </div>
-                <span aria-hidden className="opacity-35">
-                  ·
-                </span>
-                <div className="inline-flex items-center gap-1.25">
-                  <GitFork
-                    aria-hidden
-                    strokeWidth={1.7}
-                    className="size-3 shrink-0 opacity-80"
-                  />
-                  <span className="sr-only">Forks</span>
-                  <span className="font-medium tabular-nums text-foreground">
-                    {stats.forks}
-                  </span>
-                </div>
-                <span aria-hidden className="opacity-35">
-                  ·
-                </span>
-                <div className="inline-flex items-center gap-1.25">
-                  <GitBranch
-                    aria-hidden
-                    strokeWidth={1.7}
-                    className="size-3 shrink-0 opacity-80"
-                  />
-                  <span className="sr-only">Default branch</span>
-                  <span className="font-mono font-medium text-[11px] text-foreground opacity-92">
-                    {props.defaultBranch ?? "-"}
-                  </span>
-                </div>
-                <span aria-hidden className="opacity-35">
-                  ·
-                </span>
-                <div className="inline-flex items-center gap-1.25 font-mono text-[11px]">
-                  <span className="text-muted-foreground">HEAD</span>
-                  <span className="sr-only">HEAD commit</span>
-                  <span className="text-foreground/90">
-                    {props.shaShort ?? "-"}
-                  </span>
-                </div>
-              </div>
+              <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:w-[390px]">
+                <StatTile icon={Star} label="Stars" value={starsText} />
+                <StatTile icon={GitFork} label="Forks" value={forksText} />
+                <StatTile
+                  icon={Users}
+                  label="Commits"
+                  value={contributionsText}
+                />
+                <StatTile
+                  icon={Scale}
+                  label="License"
+                  value={props.repoInsights.license ?? "—"}
+                />
+                <StatTile
+                  icon={Clock3}
+                  label="Last updated"
+                  value={hasValidUpdatedAt ? lastUpdatedText : "—"}
+                  className="sm:col-span-2"
+                />
+              </dl>
+            </div>
+          </section>
 
-              <div
-                className="-mb-[1px] mt-4 flex gap-8 border-border/65 border-t pt-3.5"
-                role="tablist"
-                aria-orientation="horizontal"
+          {/* Tab strip: py controls border-to-border breathing room; tab height stays fixed. */}
+          <div className="shrink-0 border-border/65 border-y px-4 py-0.5 md:px-6">
+            <Tabs
+              value={repoViewTab}
+              onValueChange={setRepoViewTab}
+              aria-label="Repository sections"
+              className="w-full gap-0"
+            >
+              <TabsList
+                variant="line"
+                className={cn(
+                  "flex h-10 w-fit max-w-full shrink-0 items-center justify-start gap-5",
+                  "rounded-none border-0 bg-transparent p-0 shadow-none ring-0",
+                )}
               >
-                <RepoDetailTabButton
-                  label="Overview"
-                  active={tab === "overview"}
-                  onPick={() => setTab("overview")}
-                />
-                <RepoDetailTabButton
-                  label="Code"
-                  active={tab === "code"}
-                  onPick={() => setTab("code")}
-                />
-                <RepoDetailTabButton
-                  label="Readme"
-                  active={tab === "readme"}
-                  onPick={() => setTab("readme")}
-                />
-              </div>
+                <TabsTrigger
+                  value="summary"
+                  className={repoSectionTabTriggerClass("summary", repoViewTab)}
+                >
+                  Summary
+                </TabsTrigger>
+                <TabsTrigger
+                  value="code"
+                  className={repoSectionTabTriggerClass("code", repoViewTab)}
+                >
+                  Code
+                </TabsTrigger>
+                <TabsTrigger
+                  value="commits"
+                  className={repoSectionTabTriggerClass("commits", repoViewTab)}
+                >
+                  Commits
+                </TabsTrigger>
+                <TabsTrigger
+                  value="notes"
+                  className={repoSectionTabTriggerClass("notes", repoViewTab)}
+                >
+                  Notes
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div
+              className={cn(
+                "flex min-h-0 flex-1 flex-col overflow-hidden",
+                repoViewTab !== "summary" && "hidden",
+              )}
+            >
+              <RepoSummaryTab
+                key={`${props.routeOwner}/${props.routeRepo}`}
+                routeOwner={props.routeOwner}
+                routeRepo={props.routeRepo}
+                topics={props.repoInsights.topics}
+                canGenerateAiSummary={props.canGenerateAiSummary ?? false}
+                initialAiSummary={props.initialAiSummary ?? null}
+              />
+            </div>
+            <div
+              className={cn(
+                "flex min-h-0 flex-1 flex-col overflow-hidden",
+                repoViewTab !== "code" && "hidden",
+              )}
+            >
+              <RepoCodeExplorer
+                routeOwner={props.routeOwner}
+                routeRepo={props.routeRepo}
+                displayOwner={props.displayOwner}
+                displayRepo={props.displayRepo}
+                defaultBranch={props.defaultBranch}
+                initialRootEntries={props.initialRootEntries}
+                initialOpenPath={props.initialCodePath}
+              />
+            </div>
+            <div
+              className={cn(
+                "flex min-h-0 flex-1 flex-col overflow-hidden",
+                repoViewTab !== "commits" && "hidden",
+              )}
+            >
+              <RepoCommitsTab
+                routeOwner={props.routeOwner}
+                routeRepo={props.routeRepo}
+                defaultBranch={props.defaultBranch}
+              />
+            </div>
+            <div
+              className={cn(
+                "flex min-h-0 flex-1 flex-col overflow-hidden",
+                repoViewTab !== "notes" && "hidden",
+              )}
+            >
+              <RepoNotesTab
+                routeOwner={props.routeOwner}
+                routeRepo={props.routeRepo}
+              />
             </div>
           </div>
-        </header>
+        </div>
 
-        {tab === "overview" ? (
-          <RepoOverviewContent
-            displayOwner={props.displayOwner}
-            displayRepo={props.displayRepo}
-            description={props.description}
-            defaultBranch={props.defaultBranch}
-            shaShort={props.shaShort}
-            htmlUrl={props.htmlUrl}
-            starsText={stats.stars}
-            forksText={stats.forks}
-            metadataPartialNote={props.metadataPartialNote}
-            techStack={props.techStack}
-          />
-        ) : null}
-
-        {tab !== "overview" ? (
-          <div className="px-6 py-5 md:px-8 lg:pb-7 lg:pt-6">
-            {tab === "code" ? (
-              <div className="w-full overflow-hidden rounded-lg border border-border/55 bg-background">
-                {!refBranch ? (
-                  <p className="px-3 py-4 text-muted-foreground text-[12px] leading-relaxed">
-                    Default branch unavailable: revisit after GitHub metadata
-                    loads or set{" "}
-                    <code className="font-mono text-foreground">
-                      GITHUB_TOKEN
-                    </code>{" "}
-                    for private API access.
-                  </p>
-                ) : (
-                  <>
-                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-border/50 border-b bg-muted/[0.1] px-3 py-1.75 text-muted-foreground text-[11px] lg:gap-x-2.5 lg:px-3.25">
-                      <GitBranch
-                        aria-hidden
-                        strokeWidth={1.7}
-                        className="size-3"
-                      />
-                      <span className="font-mono text-foreground text-[11.25px]">
-                        {props.defaultBranch ?? "-"}
-                      </span>
-                      <span aria-hidden className="opacity-45">
-                        ·
-                      </span>
-                      <span className="font-mono text-[11px] opacity-80">
-                        {props.shaShort ?? "-"}
-                      </span>
-                    </div>
-                    <RepoFileExplorer
-                      routeOwner={props.routeOwner}
-                      routeRepo={props.routeRepo}
-                      refBranch={refBranch}
-                      initialRootEntries={props.initialRootEntries}
-                      initialOpenPath={openPathRequest.path}
-                      initialOpenPathRequestId={openPathRequest.requestId}
-                    />
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="w-full rounded-lg border border-border/55 bg-background px-3.5 pb-10 pt-4 md:px-4 lg:pb-12">
-                {props.readmeMarkdown ? (
-                  <RepoReadme
-                    markdown={props.readmeMarkdown}
-                    githubOwner={props.displayOwner}
-                    githubRepo={props.displayRepo}
-                    defaultBranch={props.defaultBranch}
-                  />
-                ) : (
-                  <p className="max-w-xl text-muted-foreground text-[12px] leading-relaxed">
-                    No README was returned. For private repos, configure{" "}
-                    <code className="font-mono text-[11px] text-foreground">
-                      GITHUB_TOKEN
-                    </code>{" "}
-                    on the server so Octokit can read repository content.
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        ) : null}
+        <RepoAiSidebar
+          routeOwner={props.routeOwner}
+          routeRepo={props.routeRepo}
+          displayOwner={props.displayOwner}
+          displayRepo={props.displayRepo}
+          indexedCommitSha={props.indexedCommitSha}
+        />
       </div>
-
-      {/*
-        Main column scrolls; rail is sibling with fixed width so height matches the shell,
-        not the active tab (Overview vs Code).
-        Uses shadcn Sidebar (collapsible=none) + sidebar tokens to align with the left app rail.
-      */}
-      <Sidebar
-        aria-label="Repository AI chat"
-        data-repo-ai-rail="true"
-        side="right"
-        collapsible="none"
-        className={cn(
-          "flex min-h-0 shrink-0 flex-col overflow-hidden border-border text-foreground",
-          "h-[min(22rem,52dvh)] w-full border-t",
-          "lg:h-full lg:min-h-0 lg:w-[min(26.25rem,100%)] lg:border-t-0 lg:border-l",
-        )}
-        style={
-          {
-            ["--sidebar-width" as string]: "min(26.25rem, 100%)",
-          } as CSSProperties
-        }
-      >
-        <SidebarContent className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden p-0">
-          <RepoRagChat
-            routeOwner={props.routeOwner}
-            routeRepo={props.routeRepo}
-            displayOwner={props.displayOwner}
-            displayRepo={props.displayRepo}
-            indexedCommitSha={props.indexedCommitSha}
-            className="min-h-0"
-          />
-        </SidebarContent>
-      </Sidebar>
     </div>
   );
 }

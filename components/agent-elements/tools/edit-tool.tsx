@@ -235,7 +235,7 @@ export function EditToolDiffCard({
                 >
                   <IconChevronDown
                     className={
-                      "w-4 h-4 transition-opacity duration-150 opacity-0 group-hover:opacity-100 " +
+                      "size-4 transition-opacity duration-150 opacity-0 group-hover:opacity-100 " +
                       (isExpanded ? "rotate-180" : "rotate-0")
                     }
                   />

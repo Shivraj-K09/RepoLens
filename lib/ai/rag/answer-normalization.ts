@@ -62,6 +62,29 @@ function removeUnverifiedPathLines(answer: string, tree: RepoTreePaths): {
   return { answer: kept, removedCount };
 }
 
+function isModelContextQuestion(question: string): boolean {
+  const q = question.toLowerCase();
+  return (
+    /\b(exact|what|which|list|show|explain)\b.*\b(context|data sources?|evidence|sent|passed)\b.*\b(ai|model|prompt)\b/.test(
+      q,
+    ) ||
+    /\bwhat\b.*\b(context|data sources?)\b.*\bsent\b/.test(q) ||
+    /\bmodel context manifest\b/.test(q)
+  );
+}
+
+function removeLeakedContextManifest(answer: string): string {
+  const manifestLine =
+    /^\s*(?:[-*]\s*)?(?:system instructions from buildRagPrompt|repository header: owner, repo, indexed commit SHA|semantic RAG chunks:|user question enriched with request date context|prior chat history:|saved repository metadata snapshot|cached repository AI summary|focused GitHub commit detail|question-targeted live GitHub facts|recent default-branch commits|resolved mentioned path kinds|direct file\/folder context|authoritative location candidates|keyword location candidates|inferred keyword context|repository implementation signals|repository workflow docs|repository tree snapshot|Model context manifest for this request)/i;
+
+  return answer
+    .split("\n")
+    .filter((line) => !manifestLine.test(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export function normalizeRagAnswer(params: {
   answer: string;
   question: string;
@@ -72,6 +95,10 @@ export function normalizeRagAnswer(params: {
 }): string {
   let out = params.answer.trim();
   if (!out) return out;
+
+  if (!isModelContextQuestion(params.question)) {
+    out = removeLeakedContextManifest(out);
+  }
 
   if (!params.allowExternalLinks) {
     out = out.replace(/https?:\/\/[^\s)]+/gi, "").replace(/[ \t]+\n/g, "\n");
@@ -129,4 +156,3 @@ export function deriveChatTitleFromQuestion(question: string): string {
   if (!oneLine) return "New chat";
   return oneLine.slice(0, 120);
 }
-

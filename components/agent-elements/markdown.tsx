@@ -416,7 +416,11 @@ export function Markdown({ content, className }: MarkdownProps) {
         className,
       )}
     >
-      <Streamdown components={components} plugins={{ code }}>
+      <Streamdown
+        components={components}
+        linkSafety={{ enabled: false }}
+        plugins={{ code }}
+      >
         {safeContent}
       </Streamdown>
     </div>
