@@ -81,7 +81,7 @@ export default async function RepoDetailPage({
     !repoRow.html_url ||
     repoRow.stars_count === null ||
     repoRow.forks_count === null ||
-    repoRow.default_branch === null;
+    !repoRow.default_branch?.trim();
 
   if (incomplete) {
     const patch = await fetchGithubRepoMetadataPatch(
@@ -103,33 +103,80 @@ export default async function RepoDetailPage({
     }
   }
 
+  const dbDefaultBranch = repoRow.default_branch?.trim() || null;
+
   const shaShort =
     repoRow.last_commit_sha && repoRow.last_commit_sha.length > 7
       ? repoRow.last_commit_sha.slice(0, 7)
       : repoRow.last_commit_sha;
-
-  const metadataPartial =
-    repoRow.stars_count === null || repoRow.forks_count === null;
 
   const [readmeMarkdown, rootEntries, repoInsights] = await Promise.all([
     fetchGithubRepoReadmeMarkdown(repoRow.github_owner, repoRow.github_repo),
     fetchGithubRepoRootContents(
       repoRow.github_owner,
       repoRow.github_repo,
-      repoRow.default_branch,
+      dbDefaultBranch,
     ),
     fetchGithubRepoInsights(repoRow.github_owner, repoRow.github_repo),
   ]);
 
-  const refGithub = repoRow.default_branch?.trim() ?? "";
+  const resolvedDefaultBranch =
+    dbDefaultBranch || repoInsights.defaultBranch?.trim() || null;
+
+  let finalRootEntries = rootEntries;
+  if (!dbDefaultBranch && resolvedDefaultBranch) {
+    finalRootEntries = await fetchGithubRepoRootContents(
+      repoRow.github_owner,
+      repoRow.github_repo,
+      resolvedDefaultBranch,
+    );
+  }
+
+  const starsDisplay =
+    typeof repoRow.stars_count === "number"
+      ? repoRow.stars_count
+      : repoInsights.stars;
+  const forksDisplay =
+    typeof repoRow.forks_count === "number"
+      ? repoRow.forks_count
+      : repoInsights.forks;
+
+  const metadataPartial =
+    (typeof starsDisplay !== "number" &&
+      typeof repoInsights.stars !== "number") ||
+    (typeof forksDisplay !== "number" &&
+      typeof repoInsights.forks !== "number");
+
+  const refGithub = resolvedDefaultBranch ?? "";
   const techStack = refGithub
     ? await fetchRepoTechStackSummary(
         repoRow.github_owner,
         repoRow.github_repo,
         refGithub,
-        rootEntries,
+        finalRootEntries,
       )
     : null;
+
+  const backfill: Record<string, string | number> & { updated_at?: string } = {};
+  if (!dbDefaultBranch && resolvedDefaultBranch) {
+    backfill.default_branch = resolvedDefaultBranch;
+  }
+  if (
+    repoRow.stars_count === null &&
+    typeof repoInsights.stars === "number"
+  ) {
+    backfill.stars_count = repoInsights.stars;
+  }
+  if (
+    repoRow.forks_count === null &&
+    typeof repoInsights.forks === "number"
+  ) {
+    backfill.forks_count = repoInsights.forks;
+  }
+  if (Object.keys(backfill).length > 0) {
+    backfill.updated_at = new Date().toISOString();
+    void supabase.from("repositories").update(backfill).eq("id", repoRow.id);
+  }
 
   const summaryRow = await fetchFreshRepoAiSummaryRow(
     supabase,
@@ -158,14 +205,14 @@ export default async function RepoDetailPage({
       displayRepo={repoRow.github_repo}
       htmlUrl={repoRow.html_url}
       description={repoRow.description}
-      defaultBranch={repoRow.default_branch}
+      defaultBranch={resolvedDefaultBranch}
       shaShort={shaShort}
       avatarUrl={gitHubAvatarSrc}
-      stars={repoRow.stars_count}
-      forks={repoRow.forks_count}
+      stars={starsDisplay}
+      forks={forksDisplay}
       metadataPartialNote={metadataPartial}
       readmeMarkdown={readmeMarkdown}
-      initialRootEntries={rootEntries}
+      initialRootEntries={finalRootEntries}
       techStack={techStack}
       repoInsights={repoInsights}
       indexedCommitSha={repoRow.indexed_commit_sha ?? null}

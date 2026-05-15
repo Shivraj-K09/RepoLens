@@ -172,7 +172,7 @@ export function LandingRepoHistoryAside({
         </div>
       ) : null}
 
-      {authSignedIn && historyLoading ? (
+      {authSignedIn && historyLoading && visits.length === 0 ? (
         !compactRail ? (
           <div className="space-y-1 px-2 py-1.5">
             {Array.from({ length: 4 }).map((_, idx) => (
