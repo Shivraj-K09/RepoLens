@@ -3,7 +3,7 @@ import { LandingRepoInput } from "@/components/landing/landing-repo-input";
 /** Home route body only — sidebar + shell come from `app/(www)/layout.tsx`. */
 export function HomePageContent() {
   return (
-    <div className="flex min-h-0 flex-1 flex-col justify-center px-5 py-10 md:px-8 md:py-14">
+    <div className="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-5 py-10 md:px-8 md:py-14">
       <div className="-translate-y-5 mx-auto flex w-full max-w-3xl flex-col items-center gap-3 md:-translate-y-8 md:gap-4">
         <section
           aria-labelledby="hero-heading"

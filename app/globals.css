@@ -140,6 +140,10 @@ body,
   background-color: var(--background) !important;
 }
 
+[data-repo-ai-rail="true"] {
+  background-color: var(--background) !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -149,4 +153,32 @@ body,
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Centered README hero: stack badge <p>/<a> blocks in a row (e.g. shields.io) */
+.readme div[align="center"] {
+  text-align: center;
+}
+
+.readme div[align="center"] > p:has(img[src*="shields"]),
+.readme div[align="center"] > p:has(a img[src*="shields"]) {
+  display: inline-block;
+  margin: 0.2rem 0.35rem !important;
+  vertical-align: middle;
+}
+
+.readme div[align="center"] > a:has(img[src*="shields"]) {
+  display: inline-block;
+  margin: 0.2rem 0.35rem;
+  vertical-align: middle;
 }

@@ -3,6 +3,7 @@ import {
   type LandingAuthorLinks,
 } from "@/components/landing/landing-shell";
 import { landingAuthFromUser } from "@/lib/auth/landing-auth";
+import { fetchRecentRepoVisitSidebar } from "@/lib/supabase/repo-visit-history";
 import { createClient } from "@/lib/supabase/server";
 
 function authorLinks(): LandingAuthorLinks {
@@ -23,9 +24,15 @@ export default async function WwwLayout({
   } = await supabase.auth.getUser();
 
   const auth = user ? landingAuthFromUser(user) : null;
+  const repoVisitHistory =
+    user != null ? await fetchRecentRepoVisitSidebar(supabase, user.id) : [];
 
   return (
-    <LandingShell auth={auth} author={authorLinks()}>
+    <LandingShell
+      auth={auth}
+      author={authorLinks()}
+      repoVisitHistory={repoVisitHistory}
+    >
       {children}
     </LandingShell>
   );
