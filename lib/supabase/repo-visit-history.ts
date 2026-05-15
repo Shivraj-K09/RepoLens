@@ -1,3 +1,4 @@
+import { fetchGithubRepoMetadataPatch } from "@/lib/github/fetch-repo-metadata";
 import { formatStarsCompact } from "@/lib/format/compact-metric";
 import type { createClient } from "@/lib/supabase/server";
 
@@ -97,13 +98,43 @@ export async function fetchRecentRepoVisitSidebar(
     return [];
   }
 
+  type RepoRow = {
+    id: string;
+    github_owner: string;
+    github_repo: string;
+    stars_count: number | null;
+  };
+
   const repoById = new Map(
-    (repoRows as Array<{
-      id: string;
-      github_owner: string;
-      github_repo: string;
-      stars_count: number | null;
-    }>).map((r) => [r.id, r]),
+    (repoRows as RepoRow[]).map((r) => [r.id, r]),
+  );
+
+  const needsStarHydration = (repoRows as RepoRow[]).filter(
+    (row) =>
+      (row.stars_count === null || row.stars_count === undefined) &&
+      Boolean(row.github_owner?.trim()) &&
+      Boolean(row.github_repo?.trim()),
+  );
+
+  const starsHydrated = new Map<string, number>();
+  await Promise.all(
+    needsStarHydration.map(async (row) => {
+      const patch = await fetchGithubRepoMetadataPatch(
+        row.github_owner,
+        row.github_repo,
+      );
+      if (!patch || typeof patch.stars_count !== "number") return;
+      starsHydrated.set(row.id, patch.stars_count);
+
+      const update: Record<string, string | number> = {
+        updated_at: new Date().toISOString(),
+        stars_count: patch.stars_count,
+      };
+      if (typeof patch.forks_count === "number") {
+        update.forks_count = patch.forks_count;
+      }
+      void supabase.from("repositories").update(update).eq("id", row.id);
+    }),
   );
 
   const out: SidebarRepoVisit[] = [];
@@ -117,7 +148,10 @@ export async function fetchRecentRepoVisitSidebar(
     if (seenHref.has(base.href)) continue;
     seenHref.add(base.href);
 
-    const starsRaw = r.stars_count;
+    const starsRaw =
+      typeof r.stars_count === "number"
+        ? r.stars_count
+        : (starsHydrated.get(rid) ?? null);
     const starsLabel =
       starsRaw === null || starsRaw === undefined
         ? "—"
