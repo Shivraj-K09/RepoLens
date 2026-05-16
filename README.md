@@ -88,4 +88,4 @@ Never commit `.env` or real secrets.
 
 ## License
 
-No license file is included in this repository. Add one if you publish or redistribute the code.
+No license file is included in this repository.
