@@ -86,12 +86,6 @@ Never commit `.env` or real secrets.
 
 ---
 
-## Roadmap
-
-Planned or deferred: saved repos / bookmarks, per-repo notes, production deploy on Vercel with env configuration, and full production smoke testing.
-
----
-
 ## License
 
 No license file is included in this repository. Add one if you publish or redistribute the code.
