@@ -13,12 +13,22 @@ export type SavedRepositoryIndexingRow = SavedRepositoryIdRow & {
   indexed_at: string | null;
 };
 
+export type SavedRepoAccessResult =
+  | { status: "ok"; row: SavedRepositoryIdRow }
+  | { status: "not_saved" }
+  | { status: "db_error"; message: string };
+
+export type SavedRepoIndexingResult =
+  | { status: "ok"; row: SavedRepositoryIndexingRow }
+  | { status: "not_saved" }
+  | { status: "db_error"; message: string };
+
 /** Returns canonical owner/repo casing from DB row if user saved this repo. */
 export async function requireSavedRepoAccess(
   userId: string,
   githubOwnerNorm: string,
   githubRepoNorm: string,
-): Promise<SavedRepositoryIdRow | null> {
+): Promise<SavedRepoAccessResult> {
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -29,11 +39,14 @@ export async function requireSavedRepoAccess(
     .eq("github_repo_norm", githubRepoNorm.toLowerCase())
     .maybeSingle();
 
-  if (error || !data) {
-    return null;
+  if (error) {
+    return { status: "db_error", message: error.message };
+  }
+  if (!data) {
+    return { status: "not_saved" };
   }
 
-  return data;
+  return { status: "ok", row: data };
 }
 
 /** Same lookup as {@link requireSavedRepoAccess} with fields needed to index embeddings. */
@@ -41,7 +54,7 @@ export async function getSavedRepositoryForIndexing(
   userId: string,
   githubOwnerNorm: string,
   githubRepoNorm: string,
-): Promise<SavedRepositoryIndexingRow | null> {
+): Promise<SavedRepoIndexingResult> {
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -54,9 +67,12 @@ export async function getSavedRepositoryForIndexing(
     .eq("github_repo_norm", githubRepoNorm.toLowerCase())
     .maybeSingle();
 
-  if (error || !data) {
-    return null;
+  if (error) {
+    return { status: "db_error", message: error.message };
+  }
+  if (!data) {
+    return { status: "not_saved" };
   }
 
-  return data as SavedRepositoryIndexingRow;
+  return { status: "ok", row: data as SavedRepositoryIndexingRow };
 }

@@ -6,6 +6,7 @@ import {
   checkRateLimit,
   rateLimitExceededResponse,
 } from "@/lib/security/rate-limit";
+import { sanitizeErrorMessage } from "@/lib/security/sanitize-error-message";
 import { createClient } from "@/lib/supabase/server";
 import { getSavedRepositoryForIndexing } from "@/lib/supabase/require-repo-for-user";
 
@@ -71,13 +72,24 @@ export async function GET(request: Request, { params }: RouteParams) {
     );
   }
 
-  const repoRow = await getSavedRepositoryForIndexing(user.id, ownerNorm, repoNorm);
-  if (!repoRow) {
+  const repoLookup = await getSavedRepositoryForIndexing(
+    user.id,
+    ownerNorm,
+    repoNorm,
+  );
+  if (repoLookup.status === "db_error") {
+    return NextResponse.json(
+      { error: sanitizeErrorMessage(repoLookup.message) },
+      { status: 500 },
+    );
+  }
+  if (repoLookup.status === "not_saved") {
     return NextResponse.json(
       { error: "Repository not saved for this account" },
       { status: 403 },
     );
   }
+  const repoRow = repoLookup.row;
 
   const commitSha = repoRow.indexed_commit_sha?.trim();
   if (!commitSha) {

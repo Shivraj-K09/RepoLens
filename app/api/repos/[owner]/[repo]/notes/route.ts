@@ -27,13 +27,20 @@ export async function GET(_request: Request, { params }: RouteParams) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const repoRow = await requireSavedRepoAccess(user.id, ownerNorm, repoNorm);
-  if (!repoRow) {
+  const repoLookup = await requireSavedRepoAccess(user.id, ownerNorm, repoNorm);
+  if (repoLookup.status === "db_error") {
+    return NextResponse.json(
+      { error: sanitizeErrorMessage(repoLookup.message) },
+      { status: 500 },
+    );
+  }
+  if (repoLookup.status === "not_saved") {
     return NextResponse.json(
       { error: "Repository not saved for this account" },
       { status: 403 },
     );
   }
+  const repoRow = repoLookup.row;
 
   const { data, error } = await supabase
     .from("repository_notes")
@@ -75,13 +82,20 @@ export async function POST(request: Request, { params }: RouteParams) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const repoRow = await requireSavedRepoAccess(user.id, ownerNorm, repoNorm);
-  if (!repoRow) {
+  const repoLookup = await requireSavedRepoAccess(user.id, ownerNorm, repoNorm);
+  if (repoLookup.status === "db_error") {
+    return NextResponse.json(
+      { error: sanitizeErrorMessage(repoLookup.message) },
+      { status: 500 },
+    );
+  }
+  if (repoLookup.status === "not_saved") {
     return NextResponse.json(
       { error: "Repository not saved for this account" },
       { status: 403 },
     );
   }
+  const repoRow = repoLookup.row;
 
   let json: unknown;
   try {

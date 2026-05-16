@@ -54,7 +54,13 @@ export async function GET(request: Request, { params }: RouteParams) {
     .eq("github_repo_norm", repoNorm)
     .maybeSingle();
 
-  if (repoErr || !repoRow) {
+  if (repoErr) {
+    return NextResponse.json(
+      { error: sanitizeErrorMessage(repoErr.message) },
+      { status: 500 },
+    );
+  }
+  if (!repoRow) {
     return NextResponse.json({ error: "Repository not found." }, { status: 404 });
   }
 

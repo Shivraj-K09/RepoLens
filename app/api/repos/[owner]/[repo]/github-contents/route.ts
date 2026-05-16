@@ -10,6 +10,7 @@ import {
   checkRateLimit,
   rateLimitExceededResponse,
 } from "@/lib/security/rate-limit";
+import { sanitizeErrorMessage } from "@/lib/security/sanitize-error-message";
 import { createClient } from "@/lib/supabase/server";
 import { requireSavedRepoAccess } from "@/lib/supabase/require-repo-for-user";
 
@@ -51,12 +52,21 @@ export async function GET(request: Request, { params }: RouteParams) {
   }
 
   const saved = await requireSavedRepoAccess(user.id, ownerNorm, repoNorm);
-  if (!saved) {
-    return NextResponse.json({ error: "Repository not saved for this account" }, { status: 403 });
+  if (saved.status === "db_error") {
+    return NextResponse.json(
+      { error: sanitizeErrorMessage(saved.message) },
+      { status: 500 },
+    );
+  }
+  if (saved.status === "not_saved") {
+    return NextResponse.json(
+      { error: "Repository not saved for this account" },
+      { status: 403 },
+    );
   }
 
-  const canonicalOwner = saved.github_owner;
-  const canonicalRepo = saved.github_repo;
+  const canonicalOwner = saved.row.github_owner;
+  const canonicalRepo = saved.row.github_repo;
 
   let search: URLSearchParams;
   try {

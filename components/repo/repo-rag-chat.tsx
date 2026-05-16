@@ -38,6 +38,8 @@ export type RepoRagChatProps = {
   displayRepo: string;
   indexedCommitSha: string | null;
   className?: string;
+  /** Compact rail (default) vs floating panel with a dedicated top header band */
+  surface?: "rail" | "floating";
 };
 
 type ChatSummary = {
@@ -476,6 +478,7 @@ export function RepoRagChat({
   displayRepo,
   indexedCommitSha,
   className,
+  surface = "rail",
 }: RepoRagChatProps) {
   const { refresh } = useRouter();
   const [messages, setMessages] = useState<UIMessage[]>([]);
@@ -521,18 +524,6 @@ export function RepoRagChat({
   useLayoutEffect(() => {
     queueMicrotask(() => {
       setLocalIndexedSha(readStoredIndexedSha(routeOwner, routeRepo));
-    });
-  }, [routeOwner, routeRepo]);
-
-  useEffect(() => {
-    queueMicrotask(() => {
-      setChats([]);
-      setActiveChatId(null);
-      newChatDraftModeRef.current = false;
-      setMessages([]);
-      setChatError(undefined);
-      setStatus("ready");
-      setChatHistoryOpen(false);
     });
   }, [routeOwner, routeRepo]);
 
@@ -1208,66 +1199,125 @@ export function RepoRagChat({
             ? "Almost ready: syncing this page with your project. If it stalls, check the error below or retry."
             : "Preparing…";
 
+  const newChatAndHistory =
+    surface === "floating" ? (
+      <div className="flex shrink-0 items-center gap-1">
+        <Tooltip delayDuration={200}>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="size-8 shrink-0"
+              disabled={!chatReady || chatLoading}
+              onClick={() => {
+                newChatDraftModeRef.current = true;
+                setActiveChatId(null);
+                setMessages([]);
+                setStatus("ready");
+                setChatError(undefined);
+              }}
+              aria-label="New chat"
+            >
+              <Plus className="size-4" aria-hidden />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="end">
+            New chat
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip delayDuration={200}>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant={chatHistoryOpen ? "secondary" : "outline"}
+              size="icon"
+              className="size-8 shrink-0"
+              disabled={!chatReady}
+              onClick={() => setChatHistoryOpen((v) => !v)}
+              aria-pressed={chatHistoryOpen}
+              aria-label="Chat history"
+            >
+              <Clock3 className="size-4" aria-hidden />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="end">
+            History
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    ) : (
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 gap-1.5 px-2.5 text-[12px]"
+          disabled={!chatReady || chatLoading}
+          onClick={() => {
+            newChatDraftModeRef.current = true;
+            setActiveChatId(null);
+            setMessages([]);
+            setStatus("ready");
+            setChatError(undefined);
+          }}
+        >
+          <Plus className="size-3.5 shrink-0" aria-hidden />
+          New chat
+        </Button>
+        <Button
+          type="button"
+          variant={chatHistoryOpen ? "secondary" : "outline"}
+          size="sm"
+          className="h-8 gap-1.5 px-2.5 text-[12px]"
+          disabled={!chatReady}
+          onClick={() => setChatHistoryOpen((v) => !v)}
+          aria-pressed={chatHistoryOpen}
+        >
+          <Clock3 className="size-3.5 shrink-0" aria-hidden />
+          History
+        </Button>
+      </div>
+    );
+
   return (
     <div
       className={cn("flex h-full min-h-0 flex-col bg-background", className)}
     >
-      <div className="shrink-0 border-border border-b px-3 py-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <p className="font-medium text-[11px] text-muted-foreground uppercase tracking-wide">
-              AI chat
-            </p>
-            <p className="truncate font-mono text-[12px] text-foreground">
+      {surface === "floating" ? (
+        <div className="shrink-0 border-border/80 border-b bg-muted/55 px-4 py-3 pr-12 dark:bg-muted/30">
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 space-y-1">
+                <p className="font-semibold text-[13px] text-foreground leading-snug tracking-tight">
+                  Repository AI
+                </p>
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  Ask questions grounded in this repo&apos;s index.
+                </p>
+              </div>
+              {newChatAndHistory}
+            </div>
+            <p className="truncate font-mono text-[11px] text-muted-foreground">
               {displayOwner}/{displayRepo}
             </p>
           </div>
-          <div className="flex items-center gap-1.5">
-            <Tooltip delayDuration={200}>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 shrink-0"
-                  disabled={!chatReady || chatLoading}
-                  onClick={() => {
-                    newChatDraftModeRef.current = true;
-                    setActiveChatId(null);
-                    setMessages([]);
-                    setStatus("ready");
-                    setChatError(undefined);
-                  }}
-                  aria-label="New chat"
-                >
-                  <Plus className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="left" align="center">
-                New chat
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip delayDuration={200}>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 shrink-0"
-                  disabled={!chatReady}
-                  onClick={() => setChatHistoryOpen((v) => !v)}
-                  aria-label="Chat history"
-                >
-                  <Clock3 className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="left" align="center">
-                Chat history
-              </TooltipContent>
-            </Tooltip>
+        </div>
+      ) : (
+        <div className="shrink-0 border-border border-b px-3 py-2.5 pr-12 lg:pr-3">
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+            <div className="min-w-0 sm:pr-0">
+              <p className="font-medium text-[11px] text-muted-foreground uppercase tracking-wide">
+                AI chat
+              </p>
+              <p className="truncate font-mono text-[12px] text-foreground">
+                {displayOwner}/{displayRepo}
+              </p>
+            </div>
+            {newChatAndHistory}
           </div>
         </div>
-      </div>
+      )}
       {chatHistoryOpen ? (
         <div className="shrink-0 border-border border-b bg-background px-2 py-1.5">
           <div className="max-h-56 overflow-y-auto scrollbar-hide">

@@ -126,17 +126,24 @@ export async function POST(request: Request, { params }: RouteParams) {
     );
   }
 
-  const repoRow = await getSavedRepositoryForIndexing(
+  const repoLookup = await getSavedRepositoryForIndexing(
     user.id,
     ownerNorm,
     repoNorm,
   );
-  if (!repoRow) {
+  if (repoLookup.status === "db_error") {
+    return NextResponse.json(
+      { error: sanitizeErrorMessage(repoLookup.message) },
+      { status: 500 },
+    );
+  }
+  if (repoLookup.status === "not_saved") {
     return NextResponse.json(
       { error: "Repository not saved for this account" },
       { status: 403 },
     );
   }
+  const repoRow = repoLookup.row;
 
   if (!process.env.HUGGINGFACE_API_KEY?.trim()) {
     return NextResponse.json(

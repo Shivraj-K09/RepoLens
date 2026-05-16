@@ -25,8 +25,20 @@ async function requireChatOwnership(params: {
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
 
-  const repoRow = await requireSavedRepoAccess(user.id, params.ownerNorm, params.repoNorm);
-  if (!repoRow) {
+  const repoLookup = await requireSavedRepoAccess(
+    user.id,
+    params.ownerNorm,
+    params.repoNorm,
+  );
+  if (repoLookup.status === "db_error") {
+    return {
+      error: NextResponse.json(
+        { error: sanitizeErrorMessage(repoLookup.message) },
+        { status: 500 },
+      ),
+    };
+  }
+  if (repoLookup.status === "not_saved") {
     return {
       error: NextResponse.json(
         { error: "Repository not saved for this account" },
@@ -34,6 +46,7 @@ async function requireChatOwnership(params: {
       ),
     };
   }
+  const repoRow = repoLookup.row;
 
   const { data: chatRow, error: chatErr } = await supabase
     .from("chats")

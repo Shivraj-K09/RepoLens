@@ -27,8 +27,17 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   const saved = await requireSavedRepoAccess(user.id, ownerNorm, repoNorm);
-  if (!saved) {
-    return NextResponse.json({ error: "Repository not found." }, { status: 404 });
+  if (saved.status === "db_error") {
+    return NextResponse.json(
+      { error: sanitizeErrorMessage(saved.message) },
+      { status: 500 },
+    );
+  }
+  if (saved.status === "not_saved") {
+    return NextResponse.json(
+      { error: "Repository not found." },
+      { status: 404 },
+    );
   }
 
   const rate = checkRateLimit({
@@ -50,7 +59,7 @@ export async function POST(request: Request, { params }: RouteParams) {
     .select(
       "github_owner, github_repo, last_commit_sha, default_branch, description, stars_count, forks_count",
     )
-    .eq("id", saved.id)
+    .eq("id", saved.row.id)
     .single();
 
   if (repoErr || !repoRow) {
